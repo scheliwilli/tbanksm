@@ -6,16 +6,11 @@ import heapq
 import json
 
 
-
 class TransportType(Enum):
     TRAIN = 1
     PLANE = 2
     ELECTRICTRAIN = 3
 
-
-class parametres(Enum):
-    COST = 1
-    CHANGE = 2
 
 
 class Flight:
@@ -44,6 +39,9 @@ class Flight:
             str(self.cost) + " rubles    " + \
             " bort id " + str(self.id) + " " + \
             " type_transport " + str(self.transport_type) + '\n'
+    
+    def check_transport_list(self, transport_list):
+        return (self.transport_type in transport_list)
 
 
 class Graph:
@@ -83,7 +81,7 @@ class Graph:
         return out
     
 
-    def get_min_changes(self, cityA: str, cityB: str, departure_time):
+    def get_min_changes(self, cityA: str, cityB: str, departure_time, transport_list = [1, 2, 3]):
         changes = {name: float("inf") for name, flights in self.graph.items()}
         time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
@@ -95,7 +93,7 @@ class Graph:
         while (q):
             curr_city = q.popleft()
             for flight in self.graph[cityA]:
-                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
                     continue
 
                 if (time[flight.cityB] > flight.arrive_time and changes[curr_city] + 1 == changes[flight.cityB]):
@@ -117,7 +115,7 @@ class Graph:
         flight_lst.reverse()
         return flight_lst
 
-    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime):
+    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
 
         min_time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
@@ -128,7 +126,7 @@ class Graph:
             first_moment, cityA = heapq.heappop(vertex_set_moment)
 
             for flight in self.graph[cityA]:
-                if first_moment + self.flight_delay > flight.start_time:
+                if (first_moment + self.flight_delay > flight.start_time) or not flight.check_transport_list(transport_list):
                     continue
                 time = flight.arrive_time
 
@@ -147,7 +145,7 @@ class Graph:
         flight_lst.reverse()
         return flight_lst
 
-    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18):
+    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
         costs = {name: float("inf") for name, flights in self.graph.items()}
         time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
@@ -159,7 +157,7 @@ class Graph:
         while (q):
             curr_city = q.popleft()
             for flight in self.graph[cityA]:
-                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
                     continue
 
                 if (time[flight.cityB] > flight.arrive_time and costs[curr_city] + flight.cost == costs[flight.cityB]):
