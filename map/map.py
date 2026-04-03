@@ -47,12 +47,13 @@ class Flight:
 
 
 class Graph:
-    def __init__(self, flight_delay=timedelta(0)):
+    def __init__(self, flight_delay=timedelta(0), file_path="flights.json"):
         self.graph = {}
         self.flight_delay = flight_delay
+        self.file_path = file_path
         #   Загрузка полётов из файла
         # Открываем файл для чтения
-        with open("flight.json", "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             # Загружаем данные из файла в переменную
             data = json.load(f)
 
@@ -79,7 +80,6 @@ class Graph:
             for flight in flight_list:
                 str_flight = "     " + str(flight)
                 out += str_flight
-              
         return out
     
 
@@ -182,17 +182,3 @@ class Graph:
         return flight_lst
 
 
-map = Graph()
-# print(map)
-date = datetime.strptime("01.01.2020 00:00", "%d.%m.%Y %H:%M")
-lst = map.get_min_duration("Moscow", "Vladivostok", date)
-lst2 = map.get_min_changes("Moscow", "Vladivostok", date)
-lst3 = map.get_min_cost("Moscow", "Vladivostok", date)
-
-# for name, flight_list in graph.items():
-for i in lst:
-    print(i)
-print('______________________')
-print(*lst2)
-print('____________________________________')
-print(*lst3)
