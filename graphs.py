@@ -2,6 +2,7 @@ from datetime import datetime
 from datetime import timedelta
 from enum import Enum
 from collections import deque
+import heapq
 import json
 
 
@@ -82,13 +83,13 @@ class Graph:
         return out
     
 
-    def get_min_changes(self, cityA: str, cityB: str, start_time):
+    def get_min_changes(self, cityA: str, cityB: str, departure_time):
         changes = {name: float("inf") for name, flights in self.graph.items()}
         time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         q = deque()
 
-        time[cityA] = start_time
+        time[cityA] = departure_time
         changes[cityA] = 0
         q.append(cityA)
         while (q):
@@ -118,21 +119,21 @@ class Graph:
 
     def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime):
 
-        mn_time = {name: float("inf") for name, flights in self.graph.items}
-        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items}
-        mn_time[cityA] = departure_time
+        min_time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
+        min_time[cityA] = departure_time
         vertex_set_moment = [(departure_time, cityA)]
 
         while vertex_set_moment:
-            tm, cityA = heapq.heappop(vertex_set_moment)
+            first_moment, cityA = heapq.heappop(vertex_set_moment)
 
             for flight in self.graph[cityA]:
-                if tm + self.flight_delay > flight.start:
+                if first_moment + self.flight_delay > flight.start_time:
                     continue
-                time = flight.end
+                time = flight.arrive_time
 
-                if mn_time[flight.cityB] > time:
-                    mn_time[flight.cityB] = time
+                if min_time[flight.cityB] > time:
+                    min_time[flight.cityB] = time
                     previos_flight[flight.cityB] = flight
                     heapq.heappush(vertex_set_moment, (time, flight.cityB))
 
@@ -146,12 +147,52 @@ class Graph:
         flight_lst.reverse()
         return flight_lst
 
+    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18):
+        costs = {name: float("inf") for name, flights in self.graph.items()}
+        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
+        q = deque()
+
+        time[cityA] = departure_time
+        costs[cityA] = 0
+        q.append(cityA)
+        while (q):
+            curr_city = q.popleft()
+            for flight in self.graph[cityA]:
+                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                    continue
+
+                if (time[flight.cityB] > flight.arrive_time and costs[curr_city] + flight.cost == costs[flight.cityB]):
+                    time[flight.cityB] = flight.arrive_time
+                    previos_flight[flight.cityB] = flight
+                    q.appendleft(flight.cityB)
+
+                if costs[curr_city] + flight.cost < costs[flight.cityB]:
+                    costs[flight.cityB] = costs[curr_city] + flight.cost
+                    previos_flight[flight.cityB] = flight
+                    q.append(flight.cityB)
+
+        flight_lst = []
+        current_city = cityB
+        while previos_flight[current_city].id != -1:
+            flight_lst.append(previos_flight[current_city])
+            current_city = previos_flight[current_city].cityA
+
+        flight_lst.reverse()
+        return flight_lst
 
 
 map = Graph()
 # print(map)
 date = datetime.strptime("01.01.2020 00:00", "%d.%m.%Y %H:%M")
-lst = map.get_min_changes("Moscow", "Vladivostok", date)
+lst = map.get_min_duration("Moscow", "Vladivostok", date)
+lst2 = map.get_min_changes("Moscow", "Vladivostok", date)
+lst3 = map.get_min_cost("Moscow", "Vladivostok", date)
+
 # for name, flight_list in graph.items():
 for i in lst:
     print(i)
+print('______________________')
+print(*lst2)
+print('____________________________________')
+print(*lst3)
