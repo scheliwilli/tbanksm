@@ -13,13 +13,15 @@ class parametres (Enum):
     CHANGE = 2
 
 class Flight:
-    def __init__ (self, 
+    def __init__ (self,
+                  cityA: str,
                   cityB : str, 
                   start_time : datetime, 
                   arrive_time : datetime, 
                   cost : int,
                   id: int,
                   transport_type: TransportType):
+        self.cityA = cityA
         self.cityB = cityB
         self.start_time = start_time
         self.arrive_time = arrive_time
@@ -29,7 +31,8 @@ class Flight:
         self.transport_type = transport_type
 
     def  __str__(self):
-        return str(self.cityB) + \
+        return str(self.cityA) +\
+                str(self.cityB) + \
                 str(self.start_time) + \
                 str(self.arrive_time) + \
                 str(self.cost) + \
@@ -55,17 +58,19 @@ class Graph:
             for flight in flight_list:
                 flight = Flight(
                     flight[0],
-                    datetime.strptime(flight[1], "%d.%m.%Y %H:%M"),
+                    flight[1],
                     datetime.strptime(flight[2], "%d.%m.%Y %H:%M"),
-                    int(flight[3]),
+                    datetime.strptime(flight[3], "%d.%m.%Y %H:%M"),
                     int(flight[4]),
-                    int(flight[5])
+                    int(flight[5]),
+                    int(flight[6])
                 )
                 self.graph[name].append(flight)
 
-    def bfs (self, cityA:str, cityB:str, start_time):
+    def get_min_changes (self, cityA:str, cityB:str, start_time):
         changes = {name: float("inf") for name, flights in self.graph.items}
         time = {name: float("inf") for name, flights in self.graph.items}
+        previos_flight = {name : -1 for name, flights in self.graph.items()}
         q = deque()
 
         time[cityA] = start_time
@@ -77,14 +82,45 @@ class Graph:
                 if flight.start_time < time[curr_city] + self.flight_delay:        # Проверка успеем ли на рейс
                     continue
 
+                if (time[flight.cityB] > flight.end_time and changes[curr_city.id] + 1 == changes[flight.cityB.id]):
+                    time[flight.cityB.id] = flight.end_time
+                    previos_flight[flight.cityB] = flight
+                    q.appendleft(flight.cityB)
+
+                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
+                    changes[flight.cityB.id] = changes[curr_city.id] + 1
+                    previos_flight[flight.cityB] = flight
+                    q.append(flight.cityB)
+
+
+        flight_lst = []
+        current_city = cityB
+        while previos_flight[current_city] != -1:
+            flight_lst.append(current_city)
+            current_city = previos_flight[current_city].cityA
+
+        return changes[cityB]
+
+
+    def get_min_cost(self, cityA:str, cityB:str, start_time):
+        changes = {name: float("inf") for name, flights in self.graph.items}
+        time = {name: float("inf") for name, flights in self.graph.items}
+        q = deque()
+
+        time[cityA] = start_time
+        changes[cityA] = 0
+        q.append(cityA)
+        while (q):
+            curr_city = q.popleft()
+            for flight in self.graph[cityA]:
+                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                    continue
+
                 if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
                     changes[flight.cityB.id] = changes[curr_city.id] + 1
                     if (time[flight.cityB] > flight.end_time):
                         time[flight.cityB.id] = flight.end_time
                     q.append(flight.cityB)
-
-    def get_min_cost(self, cityA, cityB):
-        pass
 
 test = Graph()
 graph = test.graph
