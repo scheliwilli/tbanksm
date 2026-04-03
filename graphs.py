@@ -38,9 +38,11 @@ class Flight:
                 str(self.transport_type)
 
 
+
 class Graph:
-    def __init__(self):
+    def __init__(self, flight_delay=0):
         self.graph = {}
+        self.flight_delay = flight_delay
         #   Загрузка полётов из файла
         # Открываем файл для чтения
         with open("flight.json", "r", encoding="utf-8") as f:
@@ -62,24 +64,27 @@ class Graph:
                 self.graph[name].append(flight)
 
     def bfs (self, cityA:str, cityB:str, start_time):
-        arrive_time = start_time
-        dist = {float("inf") for name, flights in self.graph.items}
+        changes = {name: float("inf") for name, flights in self.graph.items}
+        time = {name: float("inf") for name, flights in self.graph.items}
         q = deque()
 
-
-        dist[cityA.id] = 0
+        time[cityA] = start_time
+        changes[cityA] = 0
         q.append(cityA)
         while (q):
             curr_city = q.popleft()
             for flight in self.graph[cityA]:
-                if flight.start_time < arrive_time:        # Проверка успеем ли на рейс
+                if flight.start_time < time[curr_city] + self.flight_delay:        # Проверка успеем ли на рейс
                     continue
 
-                if dist[curr_city.id] + 1 < dist[flight.cityB.id]:
-                    dist[flight.cityB.id] = dist[curr_city.id] + 1
+                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
+                    changes[flight.cityB.id] = changes[curr_city.id] + 1
+                    if (time[flight.cityB] > flight.end_time):
+                        time[flight.cityB.id] = flight.end_time
                     q.append(flight.cityB)
 
-            arrive_time = flight.arrive_time
+    def get_min_cost(self, cityA, cityB):
+        pass
 
 test = Graph()
 graph = test.graph
