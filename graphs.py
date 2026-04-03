@@ -34,14 +34,13 @@ class Flight:
         self.transport_type = transport_type
 
     def __str__(self):
-        return str(self.cityA) + \
-            str(self.cityB) + \
-            str(self.start_time) + \
-            str(self.arrive_time) + \
-            str(self.cost) + \
-            str(self.duration) + \
-            str(self.id) + \
-            str(self.transport_type)
+        return "from " + str(self.cityA) + " " + \
+            " to " + str(self.cityB) + "    " + \
+            " from " + str(self.start_time) + " " + \
+            " to " + str(self.arrive_time) + "      " + \
+            str(self.cost) + " rubles    " + \
+            " bort id " + str(self.id) + " " + \
+            " type_transport " + str(self.transport_type) + '\n'
 
 
 class Graph:
@@ -68,6 +67,18 @@ class Graph:
                     int(flight[6])
                 )
                 self.graph[name].append(flight)
+
+
+    def __str__ (self):
+        out = ""
+        for name, flight_list in self.graph.items():
+            out += name + "\n"
+            for flight in flight_list:
+                str_flight = "     " + str(flight)
+                out += str_flight
+              
+        return out
+    
 
     def get_min_changes(self, cityA: str, cityB: str, start_time):
         changes = {name: float("inf") for name, flights in self.graph.items}
@@ -124,6 +135,5 @@ class Graph:
 
 
 test = Graph()
-graph = test.graph
-print(graph)
+print(test)
 # for name, flight_list in graph.items():
