@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
-from collections import deque
+from collections import deque, heapq
 import json
+
 
 
 class TransportType(Enum):
@@ -72,7 +73,7 @@ class Graph:
     def get_min_changes(self, cityA: str, cityB: str, start_time):
         changes = {name: float("inf") for name, flights in self.graph.items}
         time = {name: float("inf") for name, flights in self.graph.items}
-        previos_flight = {name: Flight("", "", 1, 1, 1, 1, 1) for name, flights in self.graph.items()}
+        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         q = deque()
 
         time[cityA] = start_time
@@ -96,32 +97,42 @@ class Graph:
 
         flight_lst = []
         current_city = cityB
-        while previos_flight[current_city].cityA != "":
+        while previos_flight[current_city].id != -1:
             flight_lst.append(current_city)
             current_city = previos_flight[current_city].cityA
 
         flight_lst.reverse()
         return flight_lst
 
-    def get_min_cost(self, cityA: str, cityB: str, start_time):
-        changes = {name: float("inf") for name, flights in self.graph.items}
-        time = {name: float("inf") for name, flights in self.graph.items}
-        q = deque()
+    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime):
 
-        time[cityA] = start_time
-        changes[cityA] = 0
-        q.append(cityA)
-        while (q):
-            curr_city = q.popleft()
+        mn_time = {name: float("inf") for name, flights in self.graph.items}
+        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items}
+        mn_time[cityA] = departure_time
+        vertex_set_moment = [(departure_time, cityA)]
+
+        while vertex_set_moment:
+            tm, cityA = heapq.heappop(vertex_set_moment)
+
             for flight in self.graph[cityA]:
-                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                if tm + self.flight_delay > flight.start:
                     continue
+                time = flight.end
 
-                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
-                    changes[flight.cityB.id] = changes[curr_city.id] + 1
-                    if (time[flight.cityB] > flight.end_time):
-                        time[flight.cityB.id] = flight.end_time
-                    q.append(flight.cityB)
+                if mn_time[flight.cityB] > time:
+                    mn_time[flight.cityB] = time
+                    previos_flight[flight.cityB] = flight
+                    heapq.heappush(vertex_set_moment, (time, flight.cityB))
+
+
+        path = []
+        cur_city = cityB
+        while previos_flight[cur_city].id != -1:
+            path.append(previos_flight[cur_city])
+            cur_city = previos_flight[cur_city].cityA
+
+        path.reverse()
+        return path
 
 
 test = Graph()
