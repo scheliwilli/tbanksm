@@ -119,8 +119,8 @@ class Graph:
 
     def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime):
 
-        mn_time = {name: float("inf") for name, flights in self.graph.items}
-        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items}
+        mn_time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         mn_time[cityA] = departure_time
         vertex_set_moment = [(departure_time, cityA)]
 
@@ -128,9 +128,9 @@ class Graph:
             tm, cityA = heapq.heappop(vertex_set_moment)
 
             for flight in self.graph[cityA]:
-                if tm + self.flight_delay > flight.start:
+                if tm + self.flight_delay > flight.start_time:
                     continue
-                time = flight.end
+                time = flight.arrive_time
 
                 if mn_time[flight.cityB] > time:
                     mn_time[flight.cityB] = time
@@ -152,7 +152,11 @@ class Graph:
 map = Graph()
 # print(map)
 date = datetime.strptime("01.01.2020 00:00", "%d.%m.%Y %H:%M")
-lst = map.get_min_changes("Moscow", "Vladivostok", date)
+lst = map.get_min_duration("Moscow", "Vladivostok", date)
+lst2 = map.get_min_changes("Moscow", "Vladivostok", date)
+
 # for name, flight_list in graph.items():
 for i in lst:
     print(i)
+print('______________________')
+print(*lst2)
