@@ -72,7 +72,7 @@ class Graph:
     def get_min_changes(self, cityA: str, cityB: str, start_time):
         changes = {name: float("inf") for name, flights in self.graph.items}
         time = {name: float("inf") for name, flights in self.graph.items}
-        previos_flight = {name: -1 for name, flights in self.graph.items()}
+        previos_flight = {name: Flight("", "", 1, 1, 1, 1, 1) for name, flights in self.graph.items()}
         q = deque()
 
         time[cityA] = start_time
@@ -96,11 +96,12 @@ class Graph:
 
         flight_lst = []
         current_city = cityB
-        while previos_flight[current_city] != -1:
+        while previos_flight[current_city].cityA != "":
             flight_lst.append(current_city)
             current_city = previos_flight[current_city].cityA
 
-        return changes[cityB]
+        flight_lst.reverse()
+        return flight_lst
 
     def get_min_cost(self, cityA: str, cityB: str, start_time):
         changes = {name: float("inf") for name, flights in self.graph.items}
