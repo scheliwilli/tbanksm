@@ -22,5 +22,25 @@
         ["Novosibirsk", "Irkutsk", "22.02.2027 09:45", "22.02.2027 12:10", 5400, 14, 2],
         ["Novosibirsk", "Moscow", "05.03.2027 20:30", "06.03.2027 00:45", 11800, 15, 2],
         ["Novosibirsk", "Vladivostok", "30.03.2027 17:15", "31.03.2027 09:40", 14200, 16, 2]
+    ],
+    "Khabarovsk": [
+    ],
+    "Kemerovo": [
+    ],
+    "Sochi": [
+    ],
+    "Irkutsk": [
+    ],
+    "Rostov-on-Don": [
+    ],
+    "Tomsk": [
+    ],
+    "Vladivostok": [
+    ],
+    "Kaliningrad": [
+    ],
+    "Krasnodar": [
+    ],
+    "Murmansk": [
     ]
 }

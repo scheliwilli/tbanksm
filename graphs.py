@@ -1,6 +1,7 @@
 from datetime import datetime
+from datetime import timedelta
 from enum import Enum
-from collections import deque, heapq
+from collections import deque
 import json
 
 
@@ -45,7 +46,7 @@ class Flight:
 
 
 class Graph:
-    def __init__(self, flight_delay=0):
+    def __init__(self, flight_delay=timedelta(0)):
         self.graph = {}
         self.flight_delay = flight_delay
         #   Загрузка полётов из файла
@@ -82,8 +83,8 @@ class Graph:
     
 
     def get_min_changes(self, cityA: str, cityB: str, start_time):
-        changes = {name: float("inf") for name, flights in self.graph.items}
-        time = {name: float("inf") for name, flights in self.graph.items}
+        changes = {name: float("inf") for name, flights in self.graph.items()}
+        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         q = deque()
 
@@ -96,20 +97,20 @@ class Graph:
                 if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
                     continue
 
-                if (time[flight.cityB] > flight.end_time and changes[curr_city.id] + 1 == changes[flight.cityB.id]):
-                    time[flight.cityB.id] = flight.end_time
+                if (time[flight.cityB] > flight.arrive_time and changes[curr_city] + 1 == changes[flight.cityB]):
+                    time[flight.cityB] = flight.arrive_time
                     previos_flight[flight.cityB] = flight
                     q.appendleft(flight.cityB)
 
-                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
-                    changes[flight.cityB.id] = changes[curr_city.id] + 1
+                if changes[curr_city] + 1 < changes[flight.cityB]:
+                    changes[flight.cityB] = changes[curr_city] + 1
                     previos_flight[flight.cityB] = flight
                     q.append(flight.cityB)
 
         flight_lst = []
         current_city = cityB
         while previos_flight[current_city].id != -1:
-            flight_lst.append(current_city)
+            flight_lst.append(previos_flight[current_city])
             current_city = previos_flight[current_city].cityA
 
         flight_lst.reverse()
@@ -136,16 +137,21 @@ class Graph:
                     heapq.heappush(vertex_set_moment, (time, flight.cityB))
 
 
-        path = []
+        flight_lst = []
         cur_city = cityB
         while previos_flight[cur_city].id != -1:
-            path.append(previos_flight[cur_city])
+            flight_lst.append(previos_flight[cur_city])
             cur_city = previos_flight[cur_city].cityA
 
-        path.reverse()
-        return path
+        flight_lst.reverse()
+        return flight_lst
 
 
-test = Graph()
-print(test)
+
+map = Graph()
+# print(map)
+date = datetime.strptime("01.01.2020 00:00", "%d.%m.%Y %H:%M")
+lst = map.get_min_changes("Moscow", "Vladivostok", date)
 # for name, flight_list in graph.items():
+for i in lst:
+    print(i)
