@@ -1,66 +1,139 @@
-import datetime
+from datetime import datetime
 from enum import Enum
 from collections import deque
+import json
 
-class TransportType (Enum):
+
+class TransportType(Enum):
     TRAIN = 1
     PLANE = 2
     ELECTRICTRAIN = 3
 
-class parametres (Enum):
+
+class parametres(Enum):
     COST = 1
     CHANGE = 2
 
-n = int(input())
-
-class City:
-    def __init__(self, name, id):
-        self.name = name
-        self.id = id
 
 class Flight:
-    def __init__ (self, 
-                  cityB : City, 
-                  start_time : datetime, 
-                  arrive_time : datetime, 
-                  cost : int,
-                  id: int,
-                  transport_type: TransportType):
+    def __init__(self,
+                 cityA: str,
+                 cityB: str,
+                 start_time: datetime,
+                 arrive_time: datetime,
+                 cost: int,
+                 id: int,
+                 transport_type: TransportType):
+        self.cityA = cityA
         self.cityB = cityB
         self.start_time = start_time
         self.arrive_time = arrive_time
         self.cost = cost
-        self.duration = self.end_time - start_time
+        self.duration = self.arrive_time - self.start_time
         self.id = id
         self.transport_type = transport_type
 
-graph = {}
-for i in range (n):
-    cityA, cityB, start_time, end_time, cost = input().split(" ")
-    flight = Flight(cityB, start_time, end_time, 10)
-    if graph.get(cityA) == None:
-        graph[cityA] = [flight]
-    else:
-        graph[cityA].append(flight)
+    def __str__(self):
+        return "from " + str(self.cityA) + " " + \
+            " to " + str(self.cityB) + "    " + \
+            " from " + str(self.start_time) + " " + \
+            " to " + str(self.arrive_time) + "      " + \
+            str(self.cost) + " rubles    " + \
+            " bort id " + str(self.id) + " " + \
+            " type_transport " + str(self.transport_type) + '\n'
 
-def bfs (cityA:City, cityB:City, start_time):
-    arrive_time = start_time
-    dist = [float("inf") for i in range (len(graph)) ]
-    q = deque()
 
+class Graph:
+    def __init__(self, flight_delay=0):
+        self.graph = {}
+        self.flight_delay = flight_delay
+        #   Загрузка полётов из файла
+        # Открываем файл для чтения
+        with open("flight.json", "r", encoding="utf-8") as f:
+            # Загружаем данные из файла в переменную
+            data = json.load(f)
+
+        #   Сохраняем json  в граф
+        for name, flight_list in data.items():
+            self.graph[name] = []
+            for flight in flight_list:
+                flight = Flight(
+                    flight[0],
+                    flight[1],
+                    datetime.strptime(flight[2], "%d.%m.%Y %H:%M"),
+                    datetime.strptime(flight[3], "%d.%m.%Y %H:%M"),
+                    int(flight[4]),
+                    int(flight[5]),
+                    int(flight[6])
+                )
+                self.graph[name].append(flight)
+
+
+    def __str__ (self):
+        out = ""
+        for name, flight_list in self.graph.items():
+            out += name + "\n"
+            for flight in flight_list:
+                str_flight = "     " + str(flight)
+                out += str_flight
+              
+        return out
     
-    dist[cityA.id] = 0
-    q.append(cityA)
-    while (q):
-        curr_city = q.popleft()
-        for flight in graph[cityA]:
-            if flight.start_time < arrive_time:        # Проверка успеем ли на рейс
-                continue
 
-            if dist[curr_city.id] + 1 < dist[flight.cityB.id]:
-                dist[flight.cityB.id] = dist[curr_city.id] + 1
-                q.append(flight.cityB)
+    def get_min_changes(self, cityA: str, cityB: str, start_time):
+        changes = {name: float("inf") for name, flights in self.graph.items}
+        time = {name: float("inf") for name, flights in self.graph.items}
+        previos_flight = {name: -1 for name, flights in self.graph.items()}
+        q = deque()
 
-        arrive_time = flight.arrive_time
-    
-    
+        time[cityA] = start_time
+        changes[cityA] = 0
+        q.append(cityA)
+        while (q):
+            curr_city = q.popleft()
+            for flight in self.graph[cityA]:
+                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                    continue
+
+                if (time[flight.cityB] > flight.end_time and changes[curr_city.id] + 1 == changes[flight.cityB.id]):
+                    time[flight.cityB.id] = flight.end_time
+                    previos_flight[flight.cityB] = flight
+                    q.appendleft(flight.cityB)
+
+                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
+                    changes[flight.cityB.id] = changes[curr_city.id] + 1
+                    previos_flight[flight.cityB] = flight
+                    q.append(flight.cityB)
+
+        flight_lst = []
+        current_city = cityB
+        while previos_flight[current_city] != -1:
+            flight_lst.append(current_city)
+            current_city = previos_flight[current_city].cityA
+
+        return changes[cityB]
+
+    def get_min_cost(self, cityA: str, cityB: str, start_time):
+        changes = {name: float("inf") for name, flights in self.graph.items}
+        time = {name: float("inf") for name, flights in self.graph.items}
+        q = deque()
+
+        time[cityA] = start_time
+        changes[cityA] = 0
+        q.append(cityA)
+        while (q):
+            curr_city = q.popleft()
+            for flight in self.graph[cityA]:
+                if flight.start_time < time[curr_city] + self.flight_delay:  # Проверка успеем ли на рейс
+                    continue
+
+                if changes[curr_city.id] + 1 < changes[flight.cityB.id]:
+                    changes[flight.cityB.id] = changes[curr_city.id] + 1
+                    if (time[flight.cityB] > flight.end_time):
+                        time[flight.cityB.id] = flight.end_time
+                    q.append(flight.cityB)
+
+
+test = Graph()
+print(test)
+# for name, flight_list in graph.items():
