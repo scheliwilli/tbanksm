@@ -1,6 +1,7 @@
-import datetime
+from datetime import datetime
 from enum import Enum
 from collections import deque
+import json
 
 class TransportType (Enum):
     TRAIN = 1
@@ -11,16 +12,9 @@ class parametres (Enum):
     COST = 1
     CHANGE = 2
 
-n = int(input())
-
-class City:
-    def __init__(self, name, id):
-        self.name = name
-        self.id = id
-
 class Flight:
     def __init__ (self, 
-                  cityB : City, 
+                  cityB : str, 
                   start_time : datetime, 
                   arrive_time : datetime, 
                   cost : int,
@@ -30,37 +24,64 @@ class Flight:
         self.start_time = start_time
         self.arrive_time = arrive_time
         self.cost = cost
-        self.duration = self.end_time - start_time
+        self.duration = self.arrive_time - self.start_time
         self.id = id
         self.transport_type = transport_type
 
-graph = {}
-for i in range (n):
-    cityA, cityB, start_time, end_time, cost = input().split(" ")
-    flight = Flight(cityB, start_time, end_time, 10)
-    if graph.get(cityA) == None:
-        graph[cityA] = [flight]
-    else:
-        graph[cityA].append(flight)
+    def  __str__(self):
+        return str(self.cityB) + \
+                str(self.start_time) + \
+                str(self.arrive_time) + \
+                str(self.cost) + \
+                str(self.duration) + \
+                str(self.id) + \
+                str(self.transport_type)
 
-def bfs (cityA:City, cityB:City, start_time):
-    arrive_time = start_time
-    dist = [float("inf") for i in range (len(graph)) ]
-    q = deque()
 
-    
-    dist[cityA.id] = 0
-    q.append(cityA)
-    while (q):
-        curr_city = q.popleft()
-        for flight in graph[cityA]:
-            if flight.start_time < arrive_time:        # Проверка успеем ли на рейс
-                continue
+class Graph:
+    def __init__(self):
+        self.graph = {}
+        #   Загрузка полётов из файла
+        # Открываем файл для чтения
+        with open("flight.json", "r", encoding="utf-8") as f:
+            # Загружаем данные из файла в переменную
+            data = json.load(f)
+        
+        #   Сохраняем json  в граф
+        for name, flight_list in data.items():
+            self.graph[name] = []
+            for flight in flight_list:
+                flight = Flight(
+                    flight[0],
+                    datetime.strptime(flight[1], "%d.%m.%Y %H:%M"),
+                    datetime.strptime(flight[2], "%d.%m.%Y %H:%M"),
+                    int(flight[3]),
+                    int(flight[4]),
+                    int(flight[5])
+                )
+                self.graph[name].append(flight)
 
-            if dist[curr_city.id] + 1 < dist[flight.cityB.id]:
-                dist[flight.cityB.id] = dist[curr_city.id] + 1
-                q.append(flight.cityB)
+    def bfs (self, cityA:str, cityB:str, start_time):
+        arrive_time = start_time
+        dist = {float("inf") for name, flights in self.graph.items}
+        q = deque()
 
-        arrive_time = flight.arrive_time
-    
-    
+
+        dist[cityA.id] = 0
+        q.append(cityA)
+        while (q):
+            curr_city = q.popleft()
+            for flight in self.graph[cityA]:
+                if flight.start_time < arrive_time:        # Проверка успеем ли на рейс
+                    continue
+
+                if dist[curr_city.id] + 1 < dist[flight.cityB.id]:
+                    dist[flight.cityB.id] = dist[curr_city.id] + 1
+                    q.append(flight.cityB)
+
+            arrive_time = flight.arrive_time
+
+test = Graph()
+graph = test.graph
+print(graph)
+# for name, flight_list in graph.items():
