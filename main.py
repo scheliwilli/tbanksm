@@ -5,9 +5,9 @@ from datetime import datetime
 map = Graph(flight_delay=timedelta(0), file_path="map/flights.json")
 # print(map)
 date = datetime.strptime("01.01.2020 00:00", "%d.%m.%Y %H:%M")
-lst1 = map.get_min_duration("Moscow", "Vladivostok", date)
-lst2 = map.get_min_changes("Moscow", "Vladivostok", date)
-lst3 = map.get_min_cost("Moscow", "Vladivostok", date)
+lst1 = map.get_min_duration("Moscow", "Vladivostok", date, transport_list=[1])
+lst2 = map.get_min_changes("Moscow", "Vladivostok", date, transport_list=[1, 2])
+lst3 = map.get_min_cost("Moscow", "Vladivostok", date, transport_list=[2, 3])
 
 # for name, flight_list in graph.items():
 print(*lst1)
