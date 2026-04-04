@@ -113,6 +113,8 @@ class Graph:
             current_city = previos_flight[current_city].cityA
 
         flight_lst.reverse()
+        if len(flight_lst) == 0:
+            flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
 
     def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
@@ -143,6 +145,8 @@ class Graph:
             cur_city = previos_flight[cur_city].cityA
 
         flight_lst.reverse()
+        if len(flight_lst) == 0:
+            flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
 
     def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
@@ -177,8 +181,14 @@ class Graph:
             current_city = previos_flight[current_city].cityA
 
         flight_lst.reverse()
+        if len(flight_lst) == 0:
+            flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
     def get_straight_races(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
-        return [flight for flight in self.graph[cityA] if flight.cityB == cityB and flight.check_transport_list(transport_list) and flight.start_time >= departure_time]
-
-
+        lst = [flight for flight in self.graph[cityA]
+                if flight.cityB == cityB
+                and flight.check_transport_list(transport_list)
+                and flight.start_time >= departure_time]
+        if len(lst) == 0:
+            lst = ['Нет подходящих рейсов😭']
+        return lst
