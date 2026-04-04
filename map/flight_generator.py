@@ -80,9 +80,7 @@ for origin in cities:
         arr_dt = dep_dt + timedelta(hours=duration_h)
         arrival = arr_dt.strftime("%d.%m.%Y %H:%M")
         
-        seats = random.randint(1, 5)  # количество мест
-        
-        flights.append([origin, dest, departure, arrival, price, next_id, seats, transport])
+        flights.append([origin, dest, departure, arrival, price, next_id, transport])
         next_id += 1
     data[origin] = flights
 
