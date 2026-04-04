@@ -178,5 +178,9 @@ class Graph:
 
         flight_lst.reverse()
         return flight_lst
-
-
+    def get_straight_races(self, cityA: str, cityB: str, transport_list=[1, 2, 3]):
+        lst = []
+        for flight in self.graph[cityA]:
+            if flight.cityB == cityB and flight.transport_type in transport_list:
+                lst.append(flight)
+        return lst
