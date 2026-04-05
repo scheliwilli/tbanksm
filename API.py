@@ -37,12 +37,22 @@ def flight_to_segment(fl: Flight) -> dict:
 def root():
     return {"status": "ok"}
 
+@app.get("/cities")
+def get_cities():
+    return {"cities": list(flight_graph.graph.keys())}
+
 @app.get("/routes")
 def search_routes(
     origin: str = Query(...),
     destination: str = Query(...),
     date: str = Query(...),
-    sort_by: str = Query("cost", enum=["cost", "duration", "transfers"]),
+    sort_by: Optional[str] = Query(None, enum=["cost", "duration", "transfers"]),
+    transport: Optional[str] = Query(None),
+    max_transfers: Optional[int] = Query(None),
+    min_cost: Optional[int] = Query(None),
+    max_cost: Optional[int] = Query(None),
+    min_duration: Optional[int] = Query(None),
+    max_duration: Optional[int] = Query(None),
 ):
     try:
         not_before = datetime.strptime(date, "%d.%m.%Y")
@@ -53,46 +63,71 @@ def search_routes(
         raise HTTPException(404, "Not found")
     if origin == destination:
         raise HTTPException(400, "Matches")
+        
+    transport_list = [1, 2, 3, 4, 5]
+    if transport == "train":
+        transport_list = [1]
+    elif transport == "plane":
+        transport_list = [2]
 
-    if sort_by == "cost":
-        path = flight_graph.get_min_cost(origin, destination, not_before)
-    elif sort_by == "duration":
-        path = flight_graph.get_min_duration(origin, destination, not_before)
-    elif sort_by == "transfers":
-        path = flight_graph.get_min_changes(origin, destination, not_before)
-    else:
-        path = flight_graph.get_min_cost(origin, destination, not_before)
+    paths = flight_graph.get_all_routes(origin, destination, not_before, transport_list=transport_list)
 
-    if not path:
+    if not paths:
         return {
             "origin": origin,
             "destination": destination,
             "date": date,
-            "sort_by": sort_by,
+            "sort_by": sort_by or "none",
             "count": 0,
             "routes": []
         }
 
-    segments = [flight_to_segment(fl) for fl in path]
-    total_cost = sum(fl.cost for fl in path)
-    total_duration_min = int((path[-1].arrive_time - path[0].start_time).total_seconds() / 60)
+    valid_paths = []
+    for path in paths:
+        transfers = max(0, len(path) - 1)
+        if max_transfers is not None and transfers > max_transfers:
+            continue
+            
+        total_cost = sum(fl.cost for fl in path)
+        if min_cost is not None and total_cost < min_cost:
+            continue
+        if max_cost is not None and total_cost > max_cost:
+            continue
 
-    route_info = {
-        "segments": segments,
-        "transfers": max(0, len(path) - 1),
-        "total_cost": total_cost,
-        "total_duration_min": total_duration_min,
-        "departure": segments[0]["departure"],
-        "arrival": segments[-1]["arrival"],
-    }
+        total_duration_min = int((path[-1].arrive_time - path[0].start_time).total_seconds() / 60)
+        if min_duration is not None and total_duration_min < min_duration:
+            continue
+        if max_duration is not None and total_duration_min > max_duration:
+            continue
+            
+        valid_paths.append(path)
+
+    if sort_by == "cost":
+        valid_paths.sort(key=lambda p: sum(fl.cost for fl in p))
+    elif sort_by == "duration":
+        valid_paths.sort(key=lambda p: (p[-1].arrive_time - p[0].start_time).total_seconds())
+    elif sort_by == "transfers":
+        valid_paths.sort(key=lambda p: len(p))
+
+    routes = []
+    for path in valid_paths:
+        segments = [flight_to_segment(fl) for fl in path]
+        routes.append({
+            "segments": segments,
+            "transfers": max(0, len(path) - 1),
+            "total_cost": sum(fl.cost for fl in path),
+            "total_duration_min": int((path[-1].arrive_time - path[0].start_time).total_seconds() / 60),
+            "departure": segments[0]["departure"],
+            "arrival": segments[-1]["arrival"],
+        })
 
     return {
         "origin": origin,
         "destination": destination,
         "date": date,
-        "sort_by": sort_by,
-        "count": 1,
-        "routes": [route_info],
+        "sort_by": sort_by or "none",
+        "count": len(routes),
+        "routes": routes,
     }
 
 @app.get("/flights/{city}")

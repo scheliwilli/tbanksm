@@ -81,102 +81,174 @@ class Graph:
         return out
     
 
-    def get_min_changes(self, cityA: str, cityB: str, departure_time, transport_list = [1, 2, 3]):
-        changes = {name: float("inf") for name, flights in self.graph.items()}
-        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
-        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
-        q = deque()
+    def get_min_changes(self, cityA: str, cityB: str, departure_time, transport_list=[1, 2, 3]):
+        visited = {name: {} for name in self.graph.keys()}
+        q = []
+        push_count = 0
+        heapq.heappush(q, (0, departure_time.timestamp(), push_count, cityA, []))
+        push_count += 1
+        visited[cityA][0] = departure_time
 
-        time[cityA] = departure_time
-        changes[cityA] = 0
-        q.append(cityA)
-        while (q):
-            curr_city = q.popleft()
-            for flight in self.graph[cityA]:
-                if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
+        while q:
+            changes, arr_ts, _, curr_city, path = heapq.heappop(q)
+            arr_time = datetime.fromtimestamp(arr_ts)
+
+            if curr_city == cityB:
+                return path
+
+            for flight in self.graph.get(curr_city, []):
+                if not flight.check_transport_list(transport_list):
+                    continue
+                if flight.start_time < arr_time + self.flight_delay:
+                    continue
+                if curr_city == cityA and flight.start_time.date() != departure_time.date():
+                    continue
+                if curr_city != cityA and flight.start_time > arr_time + self.flight_delay + timedelta(hours=48):
                     continue
 
-                if (time[flight.cityB] > flight.arrive_time and changes[curr_city] + 1 == changes[flight.cityB]):
-                    time[flight.cityB] = flight.arrive_time
-                    previos_flight[flight.cityB] = flight
-                    q.appendleft(flight.cityB)
+                new_changes = changes + 1
+                new_arr_time = flight.arrive_time
+                new_city = flight.cityB
 
-                if changes[curr_city] + 1 < changes[flight.cityB]:
-                    changes[flight.cityB] = changes[curr_city] + 1
-                    previos_flight[flight.cityB] = flight
-                    q.append(flight.cityB)
+                dom = False
+                for c, t in visited.get(new_city, {}).items():
+                    if c <= new_changes and t <= new_arr_time:
+                        dom = True
+                        break
 
-        flight_lst = []
-        current_city = cityB
-        while previos_flight[current_city].id != -1:
-            flight_lst.append(previos_flight[current_city])
-            current_city = previos_flight[current_city].cityA
+                if not dom:
+                    to_keep = {}
+                    for c, t in visited.get(new_city, {}).items():
+                        if not (new_changes <= c and new_arr_time <= t):
+                            to_keep[c] = t
+                    to_keep[new_changes] = new_arr_time
+                    visited[new_city] = to_keep
 
-        flight_lst.reverse()
-        return flight_lst
+                    new_path = path + [flight]
+                    heapq.heappush(q, (new_changes, new_arr_time.timestamp(), push_count, new_city, new_path))
+                    push_count += 1
+
+        return []
 
     def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
+        visited = {name: datetime(9999, 1, 1) for name in self.graph.keys()}
+        q = []
+        push_count = 0
+        heapq.heappush(q, (departure_time.timestamp(), push_count, cityA, []))
+        push_count += 1
+        visited[cityA] = departure_time
 
-        min_time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
-        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
-        min_time[cityA] = departure_time
-        vertex_set_moment = [(departure_time, cityA)]
+        while q:
+            arr_ts, _, curr_city, path = heapq.heappop(q)
+            arr_time = datetime.fromtimestamp(arr_ts)
 
-        while vertex_set_moment:
-            first_moment, cityA = heapq.heappop(vertex_set_moment)
+            if curr_city == cityB:
+                return path
 
-            for flight in self.graph[cityA]:
-                if (first_moment + self.flight_delay > flight.start_time) or not flight.check_transport_list(transport_list):
+            if arr_time > visited.get(curr_city, datetime(9999, 1, 1)):
+                continue
+
+            for flight in self.graph.get(curr_city, []):
+                if not flight.check_transport_list(transport_list):
                     continue
-                time = flight.arrive_time
-
-                if min_time[flight.cityB] > time:
-                    min_time[flight.cityB] = time
-                    previos_flight[flight.cityB] = flight
-                    heapq.heappush(vertex_set_moment, (time, flight.cityB))
-
-
-        flight_lst = []
-        cur_city = cityB
-        while previos_flight[cur_city].id != -1:
-            flight_lst.append(previos_flight[cur_city])
-            cur_city = previos_flight[cur_city].cityA
-
-        flight_lst.reverse()
-        return flight_lst
-
-    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
-        costs = {name: float("inf") for name, flights in self.graph.items()}
-        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
-        previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
-        q = deque()
-
-        time[cityA] = departure_time
-        costs[cityA] = 0
-        q.append(cityA)
-        while (q):
-            curr_city = q.popleft()
-            for flight in self.graph[cityA]:
-                if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
+                if flight.start_time < arr_time + self.flight_delay:
+                    continue
+                if curr_city == cityA and flight.start_time.date() != departure_time.date():
+                    continue
+                if curr_city != cityA and flight.start_time > arr_time + self.flight_delay + timedelta(hours=48):
                     continue
 
-                if (time[flight.cityB] > flight.arrive_time and costs[curr_city] + flight.cost == costs[flight.cityB]):
-                    time[flight.cityB] = flight.arrive_time
-                    previos_flight[flight.cityB] = flight
-                    q.appendleft(flight.cityB)
+                new_arr_time = flight.arrive_time
+                new_city = flight.cityB
 
-                if costs[curr_city] + flight.cost < costs[flight.cityB]:
-                    costs[flight.cityB] = costs[curr_city] + flight.cost
-                    previos_flight[flight.cityB] = flight
-                    q.append(flight.cityB)
+                if new_arr_time < visited.get(new_city, datetime(9999, 1, 1)):
+                    visited[new_city] = new_arr_time
+                    new_path = path + [flight]
+                    heapq.heappush(q, (new_arr_time.timestamp(), push_count, new_city, new_path))
+                    push_count += 1
 
-        flight_lst = []
-        current_city = cityB
-        while previos_flight[current_city].id != -1:
-            flight_lst.append(previos_flight[current_city])
-            current_city = previos_flight[current_city].cityA
+        return []
 
-        flight_lst.reverse()
-        return flight_lst
+    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost=0, max_cost=1e18, transport_list=[1, 2, 3]):
+        visited = {name: [] for name in self.graph.keys()}
+        q = []
+        push_count = 0
+        heapq.heappush(q, (0, departure_time.timestamp(), push_count, cityA, []))
+        push_count += 1
+        visited[cityA].append((0, departure_time))
 
+        while q:
+            cost, arr_ts, _, curr_city, path = heapq.heappop(q)
+            arr_time = datetime.fromtimestamp(arr_ts)
 
+            if curr_city == cityB:
+                return path
+
+            for flight in self.graph.get(curr_city, []):
+                if not flight.check_transport_list(transport_list):
+                    continue
+                if flight.start_time < arr_time + self.flight_delay:
+                    continue
+                if curr_city == cityA and flight.start_time.date() != departure_time.date():
+                    continue
+                if curr_city != cityA and flight.start_time > arr_time + self.flight_delay + timedelta(hours=48):
+                    continue
+
+                new_cost = cost + flight.cost
+                new_arr_time = flight.arrive_time
+                new_city = flight.cityB
+
+                dom = False
+                for c, t in visited.get(new_city, []):
+                    if c <= new_cost and t <= new_arr_time:
+                        dom = True
+                        break
+
+                if not dom:
+                    to_keep = []
+                    for c, t in visited.get(new_city, []):
+                        if not (new_cost <= c and new_arr_time <= t):
+                            to_keep.append((c, t))
+                    to_keep.append((new_cost, new_arr_time))
+                    visited[new_city] = to_keep
+
+                    new_path = path + [flight]
+                    heapq.heappush(q, (new_cost, new_arr_time.timestamp(), push_count, new_city, new_path))
+                    push_count += 1
+
+        return []
+   
+    def get_all_routes(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3], max_transfers=3):
+        q = [(cityA, [])]
+        valid_paths = []
+
+        while q:
+            curr_city, path = q.pop(0)
+
+            if curr_city == cityB:
+                valid_paths.append(path)
+                continue
+
+            if len(path) > max_transfers:
+                continue
+
+            arr_time = path[-1].arrive_time if path else departure_time
+
+            for flight in self.graph.get(curr_city, []):
+                if not flight.check_transport_list(transport_list):
+                    continue
+                if path and flight.start_time < arr_time + self.flight_delay:
+                    continue
+                if not path and flight.start_time.date() != departure_time.date():
+                    continue
+                if path and flight.start_time > arr_time + self.flight_delay + timedelta(hours=48):
+                    continue
+
+                # предотвращение циклов
+                visited_cities = [f.cityA for f in path] + [f.cityB for f in path]
+                if flight.cityB in visited_cities and flight.cityB != cityB:
+                    continue
+
+                q.append((flight.cityB, path + [flight]))
+
+        return valid_paths
