@@ -4,33 +4,57 @@ from datetime import datetime, timedelta
 
 # Список реальных городов России (300 штук)
 cities = [
-    "Moscow", "Saint Petersburg", "Novosibirsk", "Yekaterinburg", "Kazan", "Nizhny Novgorod",
-    "Chelyabinsk", "Omsk", "Samara", "Rostov-on-Don", "Ufa", "Krasnoyarsk", "Perm", "Voronezh",
-    "Volgograd", "Krasnodar", "Saratov", "Tyumen", "Tolyatti", "Izhevsk", "Barnaul", "Ulyanovsk",
-    "Irkutsk", "Khabarovsk", "Yaroslavl", "Vladivostok", "Makhachkala", "Tomsk", "Orenburg",
-    "Kemerovo", "Novokuznetsk", "Ryazan", "Astrakhan", "Naberezhnye Chelny", "Penza", "Lipetsk",
-    "Kirov", "Cheboksary", "Kaliningrad", "Tula", "Kursk", "Stavropol", "Ulan-Ude", "Sochi",
-    "Magnitogorsk", "Ivanovo", "Bryansk", "Tver", "Belgorod", "Sevastopol", "Nizhny Tagil",
-    "Arkhangelsk", "Vladimir", "Murmansk", "Kaluga", "Chita", "Grozny", "Smolensk", "Kostroma",
-    "Kurgan", "Orel", "Volzhsky", "Cherepovets", "Vologda", "Saransk", "Tambov", "Vladikavkaz",
-    "Yakutsk", "Podolsk", "Petrozavodsk", "Balashikha", "Khimki", "Yoshkar-Ola", "Blagoveshchensk",
-    "Korolyov", "Berezniki", "Mytishchi", "Lyubertsy", "Novorossiysk", "Nalchik", "Stary Oskol",
-    "Syktyvkar", "Noyabrsk", "Prokopyevsk", "Biysk", "Krasnogorsk", "Pskov", "Angarsk", "Balakovo",
-    "Dzerzhinsk", "Orekhovo-Zuyevo", "Bratsk", "Armavir", "Veliky Novgorod", "Surgut", "Zlatoust",
-    "Khanty-Mansiysk", "Nizhnevartovsk", "Novy Urengoy", "Yuzhno-Sakhalinsk", "Magadan", "Petropavlovsk-Kamchatsky"
+    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань",
+    "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону",
+    "Уфа", "Красноярск", "Пермь", "Воронеж", "Волгоград",
+    "Краснодар", "Саратов", "Тюмень", "Тольятти", "Ижевск",
+    "Барнаул", "Ульяновск", "Иркутск", "Хабаровск", "Ярославль",
+    "Владивосток", "Махачкала", "Томск", "Оренбург", "Кемерово",
+    "Новокузнецк", "Рязань", "Астрахань", "Пенза", "Липецк",
+    "Киров", "Чебоксары", "Калининград", "Курск", "Ставрополь",
+    "Улан-Удэ", "Тверь", "Магнитогорск", "Иваново", "Брянск",
+    "Сочи", "Белгород", "Сургут", "Владимир", "Архангельск",
+    "Чита", "Калуга", "Смоленск", "Волжский", "Якутск",
+    "Саранск", "Череповец", "Курган", "Вологда", "Орёл",
+    "Сыктывкар", "Грозный", "Тамбов", "Петрозаводск", "Нижневартовск",
+    "Кострома", "Новороссийск", "Йошкар-Ола", "Комсомольск-на-Амуре",
+    "Таганрог", "Нальчик", "Шахты", "Дзержинск", "Орск",
+    "Благовещенск", "Ангарск", "Старый Оскол", "Великий Новгород",
+    "Подольск", "Химки", "Братск", "Псков", "Бийск",
+    "Энгельс", "Стерлитамак", "Прокопьевск", "Нефтеюганск",
+    "Балаково", "Рыбинск", "Ноябрьск", "Черкесск", "Армавир",
+    "Альметьевск", "Северодвинск", "Каменск-Уральский", "Королёв",
+    "Мытищи", "Люберцы", "Электросталь", "Мурманск", "Нижнекамск",
+    "Абакан", "Майкоп", "Горно-Алтайск", "Петропавловск-Камчатский",
+    "Южно-Сахалинск", "Кызыл", "Элиста", "Магадан", "Биробиджан",
+    "Анадырь", "Назрань", "Дербент", "Каспийск", "Невинномысск",
+    "Ессентуки", "Кисловодск", "Жуковский", "Домодедово", "Раменское",
+    "Обнинск", "Саров", "Гатчина", "Пушкино", "Сергиев Посад",
+    "Коломна", "Орехово-Зуево", "Ногинск", "Щёлково", "Воскресенск",
+    "Клин", "Дмитров", "Егорьевск", "Чехов", "Ступино",
+    "Видное", "Лобня", "Долгопрудный", "Реутов", "Красногорск",
+    "Одинцово", "Истра", "Наро-Фоминск", "Солнечногорск",
+    "Зеленоград", "Троицк", "Щербинка", "Бердск", "Миасс",
+    "Копейск", "Новочеркасск", "Златоуст", "Первоуральск",
+    "Серпухов", "Новомосковск", "Киселёвск", "Норильск",
+    "Уссурийск", "Новокуйбышевск", "Железногорск", "Димитровград",
+    "Нефтекамск", "Камышин", "Муром", "Новотроицк", "Канск",
+    "Соликамск", "Междуреченск", "Ленинск-Кузнецкий", "Салават",
+    "Керчь", "Евпатория", "Симферополь", "Севастополь",
+    "Ялта", "Феодосия", "Арзамас", "Березники", "Елец",
+    "Чапаевск", "Минеральные Воды", "Октябрьский", "Когалым",
+    "Нягань", "Ухта", "Серов", "Асбест", "Верхняя Пышма",
+    "Лангепас", "Мегион", "Пыть-Ях", "Кинешма", "Шуя",
+    "Ковров", "Глазов", "Воткинск", "Можга", "Сибай",
+    "Туймазы", "Белорецк", "Кумертау", "Ишимбай", "Белебей",
+    "Бирск", "Учалы", "Сорочинск", "Бугуруслан", "Бузулук",
+    "Ливны", "Мценск", "Клинцы", "Новозыбков", "Рославль",
+    "Вязьма", "Гагарин", "Ржев", "Торжок", "Кимры",
+    "Бежецк", "Осташков", "Вышний Волочёк", "Бологое", "Удомля",
+    "Нелидово", "Торопец", "Андреаполь", "Конаково", "Кашин",
+    "Калязин", "Старица", "Зубцов", "Лихославль", "Сонково",
+    "Молоково", "Сандово", "Спирово", "Максатиха"
 ]
-# Повторяем, чтобы получить 300 уникальных (добавим ещё из малых городов)
-more_cities = [
-    "Abakan", "Anadyr", "Birobidzhan", "Cherkessk", "Elista", "Gorno-Altaysk", "Kyzyl",
-    "Maykop", "Naryan-Mar", "Saransk", "Ufa", "Ulan-Ude", "Yoshkar-Ola", "Barnaul",
-    "Vladivostok", "Volgograd", "Voronezh", "Yekaterinburg", "Izhevsk", "Irkutsk",
-    "Kazan", "Kemerovo", "Kirov", "Krasnodar", "Krasnoyarsk", "Kurgan", "Kursk",
-    "Lipetsk", "Moscow", "Murmansk", "Nizhny Novgorod", "Novosibirsk", "Omsk",
-    "Orenburg", "Oryol", "Penza", "Perm", "Rostov-on-Don", "Ryazan", "Samara",
-    "Saint Petersburg", "Saratov", "Smolensk", "Sochi", "Stavropol", "Syktyvkar",
-    "Tambov", "Tomsk", "Tula", "Tver", "Tyumen", "Ulyanovsk", "Volgograd", "Voronezh"
-]
-cities = list(dict.fromkeys(cities + more_cities))
 
 def random_date(start_year=2027, end_year=2027):
     start = datetime(start_year, 1, 1)
@@ -85,7 +109,7 @@ for origin in cities:
     data[origin] = flights
 
 # Сохраняем в JSON
-with open("flights.json", "w", encoding="utf-8") as f:
+with open(r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights_old.json", "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
 
 print(f"Сгенерировано {len(data)} городов, всего рейсов: {next_id-1}")
