@@ -1,16 +1,7 @@
-from datetime import datetime
-from datetime import timedelta
-from enum import Enum
+from datetime import datetime, timezone, timedelta
 from collections import deque
 import heapq
 import json
-
-
-class TransportType(Enum):
-    TRAIN = 1
-    PLANE = 2
-    ELECTRICTRAIN = 3
-
 
 
 class Flight:
@@ -20,8 +11,8 @@ class Flight:
                  start_time: datetime,
                  arrive_time: datetime,
                  cost: int,
-                 id: int,
-                 transport_type: TransportType):
+                 id: str,
+                 transport_type: int):
         self.cityA = cityA
         self.cityB = cityB
         self.start_time = start_time
@@ -60,13 +51,13 @@ class Graph:
             self.graph[name] = []
             for flight in flight_list:
                 flight = Flight(
-                    flight[0],
-                    flight[1],
-                    datetime.strptime(flight[2], "%d.%m.%Y %H:%M"),
-                    datetime.strptime(flight[3], "%d.%m.%Y %H:%M"),
-                    int(flight[4]),
-                    int(flight[5]),
-                    int(flight[6])
+                    cityA=flight["from"],
+                    cityB=flight["to"],
+                    start_time=datetime.fromisoformat(flight["departure"]),
+                    arrive_time=datetime.fromisoformat(flight["arrival"]),
+                    cost=0,
+                    id=flight["number"],
+                    transport_type=flight["type"]
                 )
                 self.graph[name].append(flight)
 
@@ -83,7 +74,7 @@ class Graph:
 
     def get_min_changes(self, cityA: str, cityB: str, departure_time, transport_list = [1, 2, 3]):
         changes = {name: float("inf") for name, flights in self.graph.items()}
-        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+        time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         q = deque()
 
@@ -117,9 +108,9 @@ class Graph:
             flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
 
-    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
 
-        min_time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
+        min_time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         min_time[cityA] = departure_time
         vertex_set_moment = [(departure_time, cityA)]
@@ -149,9 +140,10 @@ class Graph:
             flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
 
+
     def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
         costs = {name: float("inf") for name, flights in self.graph.items()}
-        time = {name: datetime(9999, 1, 1) for name, flights in self.graph.items()}
+        time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", 1, 1, 1, -1, 1) for name, flights in self.graph.items()}
         q = deque()
 
@@ -184,6 +176,8 @@ class Graph:
         if len(flight_lst) == 0:
             flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
+    
+
     def get_straight_races(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
         lst = [flight for flight in self.graph[cityA]
                 if flight.cityB == cityB
