@@ -36,7 +36,11 @@ class Flight:
 
 
 class Graph:
-    def __init__(self, flight_delay=timedelta(0), file_path="flights.json"):
+    def __init__(
+            self, 
+            flight_delay=timedelta(0), 
+            file_path=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights.json"
+        ):
         self.graph = {}
         self.flight_delay = flight_delay
         self.file_path = file_path
