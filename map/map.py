@@ -192,3 +192,12 @@ class Graph:
         if len(lst) == 0:
             lst = ['Нет подходящих рейсов😭']
         return lst
+
+    def forward_back_routes(self, cityA, cityB, start_time, back_time):
+        lst = []
+        for flight in self.graph[cityA]:
+            if (flight.cityB == cityB and flight.start_time.date() == start_time.date()):
+                for flight2 in self.graph[cityB]:
+                    if flight2.cityB == cityA and flight2.start_time.date() == back_time.date() and flight.arrive_time+self.flight_delay < flight2.start_time:
+                        lst.append((flight, flight2))
+        return lst
