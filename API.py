@@ -11,7 +11,7 @@ FLIGHT_FILE = os.path.join(BASE_DIR, "map", "flights.json")
 
 flight_graph = Graph(flight_delay=timedelta(0), file_path=FLIGHT_FILE)
 
-TRANSPORT_LABELS = {1: "train", 2: "plane", 3: "electrictrain", 4: "bus", 5: "ship"}
+TRANSPORT_LABELS = {1: "train", 2: "plane", 3: "electrictrain"}
 
 app = FastAPI()
 
@@ -64,7 +64,7 @@ def search_routes(
     if origin == destination:
         raise HTTPException(400, "Matches")
         
-    transport_list = [1, 2, 3, 4, 5]
+    transport_list = [1, 2, 3]
     if transport == "train":
         transport_list = [1]
     elif transport == "plane":
