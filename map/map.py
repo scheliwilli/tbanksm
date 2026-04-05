@@ -71,7 +71,7 @@ class Graph:
         return out
     
 
-    def get_min_changes(self, cityA: str, cityB: str, departure_time, transport_list = [1, 2, 3]):
+    def get_min_changes(self, cityA: str, cityB: str, departure_time, arrivetime = datetime(9999, 2, 1, tzinfo=timezone.utc), transport_list = [1, 2, 3]):
         changes = {name: float("inf") for name, flights in self.graph.items()}
         time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", datetime(1, 1, 1), datetime(1, 1, 1), 10000000000, 0) for name, flights in self.graph.items()}
@@ -86,12 +86,12 @@ class Graph:
                 if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
                     continue
 
-                if (time[flight.cityB] > flight.arrive_time and changes[curr_city] + 1 == changes[flight.cityB]):
+                if (time[flight.cityB] > flight.arrive_time and changes[curr_city] + 1 == changes[flight.cityB] and arrivetime > time[flight.cityB]):
                     time[flight.cityB] = flight.arrive_time
                     previos_flight[flight.cityB] = flight
                     q.appendleft(flight.cityB)
 
-                if changes[curr_city] + 1 < changes[flight.cityB]:
+                if changes[curr_city] + 1 < changes[flight.cityB] and arrivetime > time[flight.cityB]:
                     changes[flight.cityB] = changes[curr_city] + 1
                     previos_flight[flight.cityB] = flight
                     q.append(flight.cityB)
@@ -108,7 +108,7 @@ class Graph:
         return flight_lst
 
 
-    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
+    def get_min_duration(self, cityA: str, cityB: str, departure_time: datetime, arrivetime = datetime(9999, 2, 1, tzinfo=timezone.utc), transport_list=[1, 2, 3]):
         min_time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", datetime(1, 1, 1), datetime(1, 1, 1), 10000000000, 0) for name, flights in self.graph.items()}
         min_time[cityA] = departure_time
@@ -122,7 +122,7 @@ class Graph:
                     continue
                 time = flight.arrive_time
 
-                if min_time[flight.cityB] > time:
+                if min_time[flight.cityB] > time and arrivetime > time:
                     min_time[flight.cityB] = time
                     previos_flight[flight.cityB] = flight
                     heapq.heappush(vertex_set_moment, (time, flight.cityB))
@@ -140,7 +140,7 @@ class Graph:
         return flight_lst
 
 
-    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
+    def get_min_cost(self, cityA: str, cityB: str, departure_time: datetime, arrivetime = datetime(9999, 2, 1, tzinfo=timezone.utc), min_cost = 0, max_cost = 1e18, transport_list=[1, 2, 3]):
         costs = {name: float("inf") for name, flights in self.graph.items()}
         time = {name: datetime(9999, 1, 1, tzinfo=timezone.utc) for name, flights in self.graph.items()}
         previos_flight = {name: Flight("", "", datetime(1, 1, 1), datetime(1, 1, 1), 10000000000, 0) for name, flights in
@@ -156,12 +156,12 @@ class Graph:
                 if (flight.start_time < time[curr_city] + self.flight_delay) or not flight.check_transport_list(transport_list):  # Проверка успеем ли на рейс
                     continue
 
-                if (time[flight.cityB] > flight.arrive_time and costs[curr_city] + flight.cost == costs[flight.cityB]):
+                if (time[flight.cityB] > flight.arrive_time and costs[curr_city] + flight.cost == costs[flight.cityB] and arrivetime > time[flight.cityB]):
                     time[flight.cityB] = flight.arrive_time
                     previos_flight[flight.cityB] = flight
                     q.appendleft(flight.cityB)
 
-                if costs[curr_city] + flight.cost < costs[flight.cityB]:
+                if costs[curr_city] + flight.cost < costs[flight.cityB] and arrivetime > flight.arrive_time:
                     costs[flight.cityB] = costs[curr_city] + flight.cost
                     previos_flight[flight.cityB] = flight
                     q.append(flight.cityB)
