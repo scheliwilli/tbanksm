@@ -1,16 +1,7 @@
-from datetime import datetime
-from datetime import timedelta
-from enum import Enum
+from datetime import datetime, timezone, timedelta
 from collections import deque
 import heapq
 import json
-
-
-class TransportType(Enum):
-    TRAIN = 1
-    PLANE = 2
-    ELECTRICTRAIN = 3
-
 
 
 class Flight:
@@ -20,8 +11,8 @@ class Flight:
                  start_time: datetime,
                  arrive_time: datetime,
                  cost: int,
-                 id: int,
-                 transport_type: TransportType):
+                 id: str,
+                 transport_type: int):
         self.cityA = cityA
         self.cityB = cityB
         self.start_time = start_time
@@ -60,13 +51,13 @@ class Graph:
             self.graph[name] = []
             for flight in flight_list:
                 flight = Flight(
-                    flight[0],
-                    flight[1],
-                    datetime.strptime(flight[2], "%d.%m.%Y %H:%M"),
-                    datetime.strptime(flight[3], "%d.%m.%Y %H:%M"),
-                    int(flight[4]),
-                    int(flight[5]),
-                    int(flight[6])
+                    cityA=flight["from"],
+                    cityB=flight["to"],
+                    start_time=datetime.fromisoformat(flight["departure"]),
+                    arrive_time=datetime.fromisoformat(flight["arrival"]),
+                    cost=0,
+                    id=flight["number"],
+                    transport_type=flight["type"]
                 )
                 self.graph[name].append(flight)
 
