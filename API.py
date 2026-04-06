@@ -17,27 +17,58 @@ from map.map import Flight, Graph
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FLIGHT_FILE = os.path.join(BASE_DIR, "map", "flights.json")
-ALL_TRANSPORTS = [1, 2, 3, 4, 5]
+ALL_TRANSPORTS = [1, 2, 3, 4]
 
 flight_graph = Graph(flight_delay=timedelta(0), file_path=FLIGHT_FILE)
 CITY_TIMEZONES: dict[str, timezone] = {}
 SORTED_FLIGHTS_BY_CITY: dict[str, list[Flight]] = {}
 
-# 2026-04-06 05:11 (+07): fixed transport code mismatch with flights.json:
-# type 3 is bus, type 4 is electrictrain. Previously these two were swapped.
+
+def raw_flight_signature(record: dict) -> tuple:
+    return (
+        record["from"],
+        record["to"],
+        record.get("number"),
+        record["departure"],
+        record["arrival"],
+        record["type"],
+    )
+
+
+def flight_signature(flight: Flight) -> tuple:
+    return (
+        flight.cityA,
+        flight.cityB,
+        flight.id,
+        flight.start_time.isoformat(),
+        flight.arrive_time.isoformat(),
+        flight.transport_type,
+    )
+
+
+with open(FLIGHT_FILE, "r", encoding="utf-8") as f:
+    raw_flight_data = json.load(f)
+
+FLIGHT_METADATA = {
+    raw_flight_signature(record): {
+        "company": record.get("company") or None,
+        "company_url": record.get("company_url") or None,
+    }
+    for records in raw_flight_data.values()
+    for record in records
+}
+
 TRANSPORT_LABELS = {
     1: "train",
     2: "plane",
     3: "bus",
     4: "electrictrain",
-    5: "ship",
 }
 TRANSPORT_QUERY_MAP = {
     "train": [1],
     "plane": [2],
     "bus": [3],
     "electrictrain": [4],
-    "ship": [5],
     "all": ALL_TRANSPORTS,
 }
 
@@ -49,15 +80,28 @@ MAX_ROUTE_SEARCH_STATES = 5000
 MAX_BRANCHES_PER_STATE = 80
 MAX_FLIGHTS_PER_DESTINATION = 16
 MAX_WAIT_TIME_BETWEEN_LEGS = timedelta(hours=24)
+FLEXIBLE_DATE_WINDOW_DAYS = 7
 
 
 for city, flights in flight_graph.graph.items():
-    SORTED_FLIGHTS_BY_CITY[city] = sorted(flights, key=lambda flight: flight.start_time)
-    for flight in SORTED_FLIGHTS_BY_CITY[city]:
-        if not hasattr(flight, "company"):
-            flight.company = None
+    unique_flights = []
+    seen_signatures = set()
+
+    for flight in sorted(flights, key=lambda current_flight: current_flight.start_time):
+        signature = flight_signature(flight)
+        if signature in seen_signatures:
+            continue
+
+        seen_signatures.add(signature)
+        metadata = FLIGHT_METADATA.get(signature, {})
+        flight.company = metadata.get("company")
+        flight.company_url = metadata.get("company_url")
+        unique_flights.append(flight)
         CITY_TIMEZONES.setdefault(flight.cityA, flight.start_time.tzinfo or timezone.utc)
         CITY_TIMEZONES.setdefault(flight.cityB, flight.arrive_time.tzinfo or timezone.utc)
+
+    flight_graph.graph[city] = unique_flights
+    SORTED_FLIGHTS_BY_CITY[city] = unique_flights
 
 
 class ItineraryStop(BaseModel):
@@ -174,8 +218,6 @@ def build_client_context(request: Optional[Request], fallback_city: Optional[str
     timezone_source = "browser" if browser_timezone else "ip" if ip_context.get("timezone") else "fallback"
     target_tz = safe_zoneinfo(timezone_name)
 
-    # 2026-04-06 05:11 (+07): times are now converted to the client's local zone.
-    # We prefer the browser timezone, then IP geolocation, then the origin city's timezone.
     if target_tz is None and fallback_city:
         target_tz = get_city_timezone(fallback_city)
         timezone_name = timezone_name or str(target_tz)
@@ -236,8 +278,6 @@ def parse_route_date(date_value: str, city: str) -> datetime:
     for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
         try:
             base_date = datetime.strptime(date_value, fmt)
-            # 2026-04-06 05:11 (+07): fixed the naive/aware datetime crash by
-            # anchoring the request date to the departure city's timezone.
             return base_date.replace(tzinfo=get_city_timezone(city))
         except ValueError:
             continue
@@ -256,11 +296,16 @@ def get_flight_company(fl: Flight):
     return getattr(fl, "company", None)
 
 
+def get_flight_company_url(fl: Flight):
+    return getattr(fl, "company_url", None)
+
+
 def flight_to_segment(fl: Flight, client_context: dict) -> dict:
     target_tz = client_context["tzinfo"]
     return {
         "id": fl.id,
         "carrier": get_flight_company(fl),
+        "carrier_url": get_flight_company_url(fl),
         "from": fl.cityA,
         "to": fl.cityB,
         "departure": format_datetime(fl.start_time, target_tz),
@@ -403,6 +448,42 @@ def route_to_payload(path: list[Flight], client_context: dict) -> dict:
     }
 
 
+def path_signature(path: list[Flight]) -> tuple[str, ...]:
+    return tuple(
+        f"{flight.id}|{flight.cityA}|{flight.cityB}|{flight.start_time.isoformat()}|{flight.arrive_time.isoformat()}"
+        for flight in path
+    )
+
+
+def state_signature(state: dict) -> tuple[tuple[str, ...], ...]:
+    return tuple(path_signature(path) for path in state["paths"])
+
+
+def add_route_highlights(route_payloads: list[dict]) -> list[dict]:
+    if not route_payloads:
+        return route_payloads
+
+    cheapest_cost = min(route["total_cost"] for route in route_payloads)
+    fastest_duration = min(route["total_duration_min"] for route in route_payloads)
+
+    for route in route_payloads:
+        route["isCheapest"] = route["total_cost"] == cheapest_cost
+        route["isFastest"] = route["total_duration_min"] == fastest_duration
+
+    return route_payloads
+
+
+def get_path_highlights(path: list[Flight], candidate_paths: list[list[Flight]]) -> dict:
+    comparison_paths = candidate_paths or [path]
+    cheapest_cost = min(total_route_cost(candidate) for candidate in comparison_paths)
+    fastest_duration = min(total_route_duration(candidate) for candidate in comparison_paths)
+
+    return {
+        "isCheapest": total_route_cost(path) == cheapest_cost,
+        "isFastest": total_route_duration(path) == fastest_duration,
+    }
+
+
 def filter_paths(paths: list[list[Flight]], max_transfers: Optional[int], min_cost: Optional[float], max_cost: Optional[float], min_duration: Optional[int], max_duration: Optional[int]) -> list[list[Flight]]:
     valid_paths = []
     for path in paths:
@@ -495,6 +576,95 @@ def prune_candidate_paths(paths: list[list[Flight]], limit: Optional[int] = None
     return pruned or ranked_paths[:limit]
 
 
+def get_valid_paths_for_date(
+    origin: str,
+    destination: str,
+    not_before: datetime,
+    transport_list: list[int],
+    normalized_max_transfers: int,
+    max_transfers: Optional[int],
+    min_cost: Optional[float],
+    max_cost: Optional[float],
+    min_duration: Optional[int],
+    max_duration: Optional[int],
+) -> list[list[Flight]]:
+    paths = get_all_routes(
+        origin,
+        destination,
+        not_before,
+        transport_list=transport_list,
+        max_transfers=normalized_max_transfers,
+    )
+    if not paths:
+        return []
+
+    return filter_paths(paths, max_transfers, min_cost, max_cost, min_duration, max_duration)
+
+
+def find_flexible_date_options(
+    origin: str,
+    destination: str,
+    base_date: datetime,
+    transport_list: list[int],
+    normalized_max_transfers: int,
+    max_transfers: Optional[int],
+    min_cost: Optional[float],
+    max_cost: Optional[float],
+    min_duration: Optional[int],
+    max_duration: Optional[int],
+) -> list[dict]:
+    before_option = None
+    after_option = None
+
+    for offset in range(1, FLEXIBLE_DATE_WINDOW_DAYS + 1):
+        if before_option is None:
+            before_date = base_date - timedelta(days=offset)
+            before_paths = get_valid_paths_for_date(
+                origin=origin,
+                destination=destination,
+                not_before=before_date,
+                transport_list=transport_list,
+                normalized_max_transfers=normalized_max_transfers,
+                max_transfers=max_transfers,
+                min_cost=min_cost,
+                max_cost=max_cost,
+                min_duration=min_duration,
+                max_duration=max_duration,
+            )
+            if before_paths:
+                before_option = {
+                    "direction": "before",
+                    "date": before_date.strftime("%d.%m.%Y"),
+                    "count": len(before_paths),
+                }
+
+        if after_option is None:
+            after_date = base_date + timedelta(days=offset)
+            after_paths = get_valid_paths_for_date(
+                origin=origin,
+                destination=destination,
+                not_before=after_date,
+                transport_list=transport_list,
+                normalized_max_transfers=normalized_max_transfers,
+                max_transfers=max_transfers,
+                min_cost=min_cost,
+                max_cost=max_cost,
+                min_duration=min_duration,
+                max_duration=max_duration,
+            )
+            if after_paths:
+                after_option = {
+                    "direction": "after",
+                    "date": after_date.strftime("%d.%m.%Y"),
+                    "count": len(after_paths),
+                }
+
+        if before_option is not None and after_option is not None:
+            break
+
+    return [option for option in (before_option, after_option) if option is not None]
+
+
 def build_single_route_response(
     request: Optional[Request],
     origin: str,
@@ -519,22 +689,39 @@ def build_single_route_response(
     transport_list = parse_transport_codes(transport)
     normalized_max_transfers = 3 if max_transfers is None else max_transfers
 
-    paths = get_all_routes(
-        origin,
-        destination,
-        not_before,
+    valid_paths = get_valid_paths_for_date(
+        origin=origin,
+        destination=destination,
+        not_before=not_before,
         transport_list=transport_list,
-        max_transfers=normalized_max_transfers,
+        normalized_max_transfers=normalized_max_transfers,
+        max_transfers=max_transfers,
+        min_cost=min_cost,
+        max_cost=max_cost,
+        min_duration=min_duration,
+        max_duration=max_duration,
     )
 
-    if not paths:
-        return empty_routes_response(origin, destination, date, sort_by, client_context)
+    if not valid_paths:
+        empty_response = empty_routes_response(origin, destination, date, sort_by, client_context)
+        empty_response["flexible_dates"] = find_flexible_date_options(
+            origin=origin,
+            destination=destination,
+            base_date=not_before,
+            transport_list=transport_list,
+            normalized_max_transfers=normalized_max_transfers,
+            max_transfers=max_transfers,
+            min_cost=min_cost,
+            max_cost=max_cost,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+        return empty_response
 
-    valid_paths = filter_paths(paths, max_transfers, min_cost, max_cost, min_duration, max_duration)
     sort_paths(valid_paths, sort_by, sort_order, not_before)
 
     total_found = len(valid_paths)
-    routes = [route_to_payload(path, client_context) for path in valid_paths[:MAX_RETURNED_ROUTES]]
+    routes = add_route_highlights([route_to_payload(path, client_context) for path in valid_paths[:MAX_RETURNED_ROUTES]])
     return {
         "origin": origin,
         "destination": destination,
@@ -544,6 +731,7 @@ def build_single_route_response(
         "total_found": total_found,
         "is_truncated": total_found > MAX_RETURNED_ROUTES,
         "routes": routes,
+        "flexible_dates": [],
         "client_context": serialize_client_context(client_context),
     }
 
@@ -622,11 +810,21 @@ def build_itinerary_response(request: Optional[Request], payload: ItineraryReque
 
         current_states = prune_itinerary_states(next_states)
 
+    fastest_state = min(current_states, key=lambda state: (state["arrival_time"], state["total_cost"]))
     best_state = min(current_states, key=lambda state: (state["total_cost"], state["arrival_time"]))
     legs = []
     route_paths = best_state["paths"]
+    current_ready_time = departure_time
 
     for stop, path in zip(payload.stops, best_state["paths"]):
+        candidate_paths = get_all_routes(
+            path[0].cityA,
+            path[-1].cityB,
+            current_ready_time,
+            max_transfers=payload.max_transfers,
+            transport_list=transport_list,
+        )
+        candidate_paths = prune_candidate_paths(candidate_paths, limit=MAX_ITINERARY_OPTIONS_PER_LEG)
         leg_payload = route_to_payload(path, client_context)
         leg_payload.update({
             "origin": path[0].cityA,
@@ -634,7 +832,9 @@ def build_itinerary_response(request: Optional[Request], payload: ItineraryReque
             "stay_hours_after_arrival": stop.stay_hours,
             "stay_label_after_arrival": format_stay_label(stop.stay_hours * 60),
         })
+        leg_payload.update(get_path_highlights(path, candidate_paths))
         legs.append(leg_payload)
+        current_ready_time = path[-1].arrive_time + timedelta(hours=stop.stay_hours)
 
     if route_paths:
         overall_finish = route_paths[-1][-1].arrive_time
@@ -651,6 +851,8 @@ def build_itinerary_response(request: Optional[Request], payload: ItineraryReque
         "total_cost": round(best_state["total_cost"], 2),
         "total_duration_min": total_duration_min,
         "total_transfers": sum(max(0, len(path) - 1) for path in route_paths),
+        "isCheapest": True,
+        "isFastest": state_signature(best_state) == state_signature(fastest_state),
         "client_context": serialize_client_context(client_context),
     }
 

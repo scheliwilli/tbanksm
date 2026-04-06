@@ -1,4 +1,6 @@
 import { formatDuration, formatPrice, formatTransfers, getTransportBadge, getTransportLabel } from '../utils';
+import CarrierLink from './CarrierLink';
+import HighlightFlags from './HighlightFlags';
 
 function SegmentRow({ segment, isLast }) {
   return (
@@ -20,7 +22,7 @@ function SegmentRow({ segment, isLast }) {
           <span className="segment-badge">{getTransportBadge(segment.transport)}</span>
           <span>{formatDuration(segment.duration_min)}</span>
           <span>Прибытие {segment.arrival.slice(11)}</span>
-          {segment.carrier && <span>{segment.carrier}</span>}
+          {segment.carrier && <CarrierLink name={segment.carrier} url={segment.carrier_url} />}
         </div>
       </div>
     </div>
@@ -30,9 +32,10 @@ function SegmentRow({ segment, isLast }) {
 export default function TicketCard({ route }) {
   const transportKinds = Array.from(new Set(route.segments.map((segment) => segment.transport)));
   const primaryTransport = transportKinds.length === 1 ? transportKinds[0] : undefined;
+  const isFeatured = route.isCheapest || route.isFastest;
 
   return (
-    <article className="ticket-card">
+    <article className={`ticket-card ${isFeatured ? 'is-featured' : ''}`}>
       <div className="ticket-card__top">
         <div>
           <div className="ticket-card__eyebrow">{primaryTransport ? getTransportLabel(primaryTransport) : 'Смешанный маршрут'}</div>
@@ -40,7 +43,7 @@ export default function TicketCard({ route }) {
             {route.origin || route.segments[0]?.from} → {route.destination || route.segments.at(-1)?.to}
           </h3>
         </div>
-        <div className="ticket-card__price">{formatPrice(route.total_cost)}</div>
+        <div className="ticket-card__price">от {formatPrice(route.total_cost)}</div>
       </div>
 
       <div className="ticket-card__summary">
@@ -61,6 +64,12 @@ export default function TicketCard({ route }) {
           <strong>{formatTransfers(route.transfers)}</strong>
         </div>
       </div>
+
+      <HighlightFlags
+        isCheapest={route.isCheapest}
+        isFastest={route.isFastest}
+        className="ticket-card__flags"
+      />
 
       <div className="ticket-card__segments">
         {route.segments.map((segment, index) => (

@@ -70,8 +70,6 @@ export function getTransportLabel(transport) {
       return 'Автобус';
     case 'electrictrain':
       return 'Электричка';
-    case 'ship':
-      return 'Корабль';
     default:
       return 'Маршрут';
   }
@@ -87,8 +85,6 @@ export function getTransportBadge(transport) {
       return 'Автобус';
     case 'electrictrain':
       return 'Электричка';
-    case 'ship':
-      return 'Корабль';
     default:
       return 'Транспорт';
   }

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getCities, getClientContext, getItinerary, getRoutes } from './api';
+import { getCities, getClientContext, getFlightsFromCity, getItinerary, getRoutes } from './api';
+import FlightCatalog from './components/FlightCatalog';
+import HighlightFlags from './components/HighlightFlags';
 import Modal from './components/Modal';
 import TicketCard from './components/TicketCard';
 import {
+  apiDateToUi,
   formatClientLocation,
   formatDisplayDate,
   formatDuration,
@@ -26,6 +29,7 @@ const transportTiles = [
 
 const searchModes = [
   { key: 'single', label: 'Обычный поиск' },
+  { key: 'catalog', label: 'Каталог рейсов' },
   { key: 'itinerary', label: 'Маршрут по городам' },
 ];
 
@@ -36,6 +40,7 @@ const sortOptions = [
   { value: 'departure', label: 'По времени отправления' },
   { value: 'closest_time', label: 'Ближайшее время' },
 ];
+const NO_SORT_VALUE = 'none';
 
 const initialFilters = {
   max_transfers: 3,
@@ -45,11 +50,152 @@ const initialFilters = {
   max_duration: '',
 };
 
+let nextStopId = 1;
+
 function makeStop() {
   return {
+    id: nextStopId++,
     city: '',
     stayHours: 24,
   };
+}
+
+function formatCount(count, forms) {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+
+  if (mod100 >= 11 && mod100 <= 14) {
+    return forms[2];
+  }
+
+  if (mod10 === 1) {
+    return forms[0];
+  }
+
+  if (mod10 >= 2 && mod10 <= 4) {
+    return forms[1];
+  }
+
+  return forms[2];
+}
+
+function getHighlightScore(item) {
+  return Number(Boolean(item.isCheapest)) + Number(Boolean(item.isFastest));
+}
+
+function prioritizeHighlightedItems(items) {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const highlightDiff = getHighlightScore(right.item) - getHighlightScore(left.item);
+      if (highlightDiff !== 0) {
+        return highlightDiff;
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ item }) => item);
+}
+
+function dedupeItemsByKey(items, makeKey) {
+  const seenKeys = new Set();
+  const uniqueItems = [];
+
+  for (const item of items) {
+    const key = makeKey(item);
+    if (seenKeys.has(key)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    uniqueItems.push(item);
+  }
+
+  return uniqueItems;
+}
+
+function getFlightListKey(flight) {
+  return [
+    flight.from,
+    flight.to,
+    flight.id || '',
+    flight.departure_iso || '',
+    flight.arrival_iso || '',
+    flight.transport || '',
+  ].join('|');
+}
+
+function getRouteKey(route) {
+  return route.segments
+    .map((segment) => getFlightListKey(segment))
+    .join('::');
+}
+
+function buildFlightCatalogs(flights, selectedDate, selectedTransport) {
+  const filteredFlights = flights.filter((flight) => {
+    const matchesDate = !selectedDate || flight.departure_iso?.slice(0, 10) === selectedDate;
+    const matchesTransport = selectedTransport.length === 0 || selectedTransport.includes(flight.transport);
+    return matchesDate && matchesTransport;
+  });
+  const uniqueFlights = dedupeItemsByKey(filteredFlights, getFlightListKey);
+
+  const groupedFlights = uniqueFlights.reduce((accumulator, flight) => {
+    const destination = flight.to || 'Без направления';
+    if (!accumulator.has(destination)) {
+      accumulator.set(destination, []);
+    }
+
+    accumulator.get(destination).push(flight);
+    return accumulator;
+  }, new Map());
+
+  return Array.from(groupedFlights.entries())
+    .map(([destination, destinationFlights]) => {
+      const cheapestCost = Math.min(...destinationFlights.map((flight) => flight.cost));
+      const fastestDuration = Math.min(...destinationFlights.map((flight) => flight.duration_min));
+      const flightsWithFlags = destinationFlights
+        .map((flight) => ({
+          ...flight,
+          isCheapest: flight.cost === cheapestCost,
+          isFastest: flight.duration_min === fastestDuration,
+        }))
+        .sort((left, right) => {
+          const highlightDiff = getHighlightScore(right) - getHighlightScore(left);
+          if (highlightDiff !== 0) {
+            return highlightDiff;
+          }
+
+          if (left.isCheapest !== right.isCheapest) {
+            return left.isCheapest ? -1 : 1;
+          }
+
+          if (left.isFastest !== right.isFastest) {
+            return left.isFastest ? -1 : 1;
+          }
+
+          if (left.cost !== right.cost) {
+            return left.cost - right.cost;
+          }
+
+          if (left.duration_min !== right.duration_min) {
+            return left.duration_min - right.duration_min;
+          }
+
+          return left.departure_iso.localeCompare(right.departure_iso);
+        });
+      const highlightedCount = flightsWithFlags.filter((flight) => getHighlightScore(flight) > 0).length;
+
+      return {
+        destination,
+        flights: flightsWithFlags,
+        count: flightsWithFlags.length,
+        countLabel: `${flightsWithFlags.length} ${formatCount(flightsWithFlags.length, ['рейс', 'рейса', 'рейсов'])}`,
+        cheapestCost,
+        fastestDuration,
+        highlightedCount,
+      };
+    })
+    .sort((left, right) => left.destination.localeCompare(right.destination, 'ru'));
 }
 
 function ClientHint({ clientContext }) {
@@ -72,15 +218,19 @@ export default function App() {
   const [clientContext, setClientContext] = useState(null);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
-  const [sortBy, setSortBy] = useState('cost');
-  const [draftSortBy, setDraftSortBy] = useState('cost');
+  const [sortBy, setSortBy] = useState(NO_SORT_VALUE);
+  const [draftSortBy, setDraftSortBy] = useState(NO_SORT_VALUE);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
+  const [directoryResult, setDirectoryResult] = useState(null);
   const [itineraryResult, setItineraryResult] = useState(null);
   const [hoveredTransport, setHoveredTransport] = useState(null);
+  const [hoveredCatalogTransport, setHoveredCatalogTransport] = useState(null);
   const [hoveredPlannerTransport, setHoveredPlannerTransport] = useState(null);
+  const [openCatalogs, setOpenCatalogs] = useState({});
   const singleDateInputRef = useRef(null);
+  const directoryDateInputRef = useRef(null);
   const itineraryDateInputRef = useRef(null);
 
   const [form, setForm] = useState(() => ({
@@ -95,6 +245,12 @@ export default function App() {
     date: '',
     transport: [],
     stops: [makeStop()],
+  }));
+
+  const [catalogForm, setCatalogForm] = useState(() => ({
+    origin: '',
+    date: '',
+    transport: [],
   }));
 
   useEffect(() => {
@@ -124,9 +280,14 @@ export default function App() {
   }, []);
 
   const cityOptions = useMemo(() => [...cities].sort((a, b) => a.localeCompare(b, 'ru')), [cities]);
-  const activeClientContext = searchResult?.client_context || itineraryResult?.client_context || clientContext;
-  const activeSortLabel = sortOptions.find((item) => item.value === sortBy)?.label || 'Сортировка';
-  const resultKind = itineraryResult ? 'itinerary' : searchResult ? 'single' : null;
+  const activeClientContext = searchResult?.client_context
+    || directoryResult?.client_context
+    || itineraryResult?.client_context
+    || clientContext;
+  const activeSortLabel = sortBy === NO_SORT_VALUE
+    ? 'Сортировка'
+    : sortOptions.find((item) => item.value === sortBy)?.label || 'Сортировка';
+  const resultKind = directoryResult ? 'catalog' : itineraryResult ? 'itinerary' : searchResult ? 'single' : null;
 
   useEffect(() => {
     if (searchResult && !itineraryResult) {
@@ -135,19 +296,27 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, sortBy]);
 
-  async function handleSearch(event) {
-    event?.preventDefault();
+  async function runSingleSearch(overrides = {}) {
+    const nextForm = {
+      ...form,
+      ...overrides,
+    };
+
+    if (Object.keys(overrides).length > 0) {
+      setForm(nextForm);
+    }
+
     setError('');
     setRouteLoading(true);
 
     try {
       const data = await getRoutes({
-        origin: form.origin,
-        destination: form.destination,
-        date: uiDateToApi(form.date),
-        sort_by: sortBy,
+        origin: nextForm.origin,
+        destination: nextForm.destination,
+        date: uiDateToApi(nextForm.date),
+        sort_by: sortBy === NO_SORT_VALUE ? undefined : sortBy,
         sort_order: 'asc',
-        transport: form.transport,
+        transport: nextForm.transport,
         max_transfers: filters.max_transfers,
         min_cost: filters.min_cost,
         max_cost: filters.max_cost,
@@ -155,13 +324,17 @@ export default function App() {
         max_duration: filters.max_duration,
       });
 
-      const routes = (data.routes || []).map((route) => ({
-        ...route,
-        origin: data.origin,
-        destination: data.destination,
-      }));
+      const routes = prioritizeHighlightedItems(dedupeItemsByKey(
+        (data.routes || []).map((route) => ({
+          ...route,
+          origin: data.origin,
+          destination: data.destination,
+        })),
+        getRouteKey,
+      ));
 
       setSearchResult({ ...data, routes });
+      setDirectoryResult(null);
       setItineraryResult(null);
       setClientContext((current) => data.client_context || current);
     } catch (err) {
@@ -170,6 +343,11 @@ export default function App() {
     } finally {
       setRouteLoading(false);
     }
+  }
+
+  async function handleSearch(event) {
+    event?.preventDefault();
+    await runSingleSearch();
   }
 
   async function handleItinerarySearch(event) {
@@ -191,6 +369,7 @@ export default function App() {
 
       setItineraryResult(data);
       setSearchResult(null);
+      setDirectoryResult(null);
       setClientContext((current) => data.client_context || current);
       if (!data.found && data.message) {
         setError(data.message);
@@ -203,8 +382,43 @@ export default function App() {
     }
   }
 
+  async function handleCatalogSearch(event) {
+    event?.preventDefault();
+    setError('');
+    setRouteLoading(true);
+
+    try {
+      const data = await getFlightsFromCity(catalogForm.origin);
+      const catalogs = buildFlightCatalogs(data.flights || [], catalogForm.date, catalogForm.transport);
+      const totalFlights = catalogs.reduce((sum, catalog) => sum + catalog.flights.length, 0);
+
+      setDirectoryResult({
+        origin: data.city,
+        selectedDate: catalogForm.date,
+        transport: [...catalogForm.transport],
+        totalFlights,
+        totalDestinations: catalogs.length,
+        catalogs,
+        client_context: data.client_context,
+      });
+      setSearchResult(null);
+      setItineraryResult(null);
+      setOpenCatalogs({});
+      setClientContext((current) => data.client_context || current);
+    } catch (err) {
+      setDirectoryResult(null);
+      setError(err.message);
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
   function updateForm(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateCatalogForm(key, value) {
+    setCatalogForm((current) => ({ ...current, [key]: value }));
   }
 
   function updateItineraryForm(key, value) {
@@ -237,7 +451,14 @@ export default function App() {
   }
 
   function toggleTransport(stateKey, type) {
-    const setter = stateKey === 'single' ? setForm : setItineraryForm;
+    const setterByMode = {
+      single: setForm,
+      catalog: setCatalogForm,
+      itinerary: setItineraryForm,
+    };
+    const setter = setterByMode[stateKey];
+    if (!setter) return;
+
     setter((current) => {
       const isActive = current.transport.includes(type);
       return {
@@ -259,8 +480,17 @@ export default function App() {
 
   function resetSearch() {
     setSearchResult(null);
+    setDirectoryResult(null);
     setItineraryResult(null);
+    setOpenCatalogs({});
     setError('');
+  }
+
+  function toggleCatalog(destination) {
+    setOpenCatalogs((current) => ({
+      ...current,
+      [destination]: !current[destination],
+    }));
   }
 
   function openFilters() {
@@ -281,6 +511,16 @@ export default function App() {
   function applySort() {
     setSortBy(draftSortBy);
     setIsSortOpen(false);
+  }
+
+  function resetSort() {
+    setDraftSortBy(NO_SORT_VALUE);
+    setSortBy(NO_SORT_VALUE);
+    setIsSortOpen(false);
+  }
+
+  function applyFlexibleDate(date) {
+    runSingleSearch({ date: apiDateToUi(date) });
   }
 
   function openDatePicker(ref) {
@@ -319,6 +559,37 @@ export default function App() {
             </button>
           );
         })}
+      </div>
+    );
+  }
+
+  function renderCompactTransportGrid(transportStateKey, hoveredState, setHoveredState, selectedTransport) {
+    return (
+      <div className="planner-card__transport">
+        <div className="planner-card__label">Транспорт</div>
+        <div className="planner-transport-grid">
+          {transportTiles.map((tile) => {
+            const isSelected = selectedTransport.includes(tile.key);
+            const isHovered = hoveredState === tile.key;
+
+            return (
+              <button
+                key={tile.key}
+                type="button"
+                className={`transport-tile transport-tile--compact ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
+                onMouseEnter={() => setHoveredState(tile.key)}
+                onMouseLeave={() => setHoveredState(null)}
+                onFocus={() => setHoveredState(tile.key)}
+                onBlur={() => setHoveredState(null)}
+                onClick={() => toggleTransport(transportStateKey, tile.key)}
+                aria-pressed={isSelected}
+              >
+                <img src={tile.image} alt={tile.label} />
+                <span>{tile.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -448,36 +719,12 @@ export default function App() {
             </label>
           </div>
 
-          <div className="planner-card__transport">
-            <div className="planner-card__label">Транспорт</div>
-            <div className="planner-transport-grid">
-              {transportTiles.map((tile) => {
-                const isSelected = itineraryForm.transport.includes(tile.key);
-                const isHovered = hoveredPlannerTransport === tile.key;
-                return (
-                  <button
-                    key={tile.key}
-                    type="button"
-                    className={`transport-tile transport-tile--compact ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
-                    onMouseEnter={() => setHoveredPlannerTransport(tile.key)}
-                    onMouseLeave={() => setHoveredPlannerTransport(null)}
-                    onFocus={() => setHoveredPlannerTransport(tile.key)}
-                    onBlur={() => setHoveredPlannerTransport(null)}
-                    onClick={() => toggleTransport('itinerary', tile.key)}
-                    aria-pressed={isSelected}
-                  >
-                    <img src={tile.image} alt={tile.label} />
-                    <span>{tile.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {renderCompactTransportGrid('itinerary', hoveredPlannerTransport, setHoveredPlannerTransport, itineraryForm.transport)}
 
           <div className="planner-card__label">Города и задержки</div>
           <div className="planner-stop-list">
             {itineraryForm.stops.map((stop, index) => (
-              <div className="planner-stop" key={`${index}-${stop.city}`}>
+              <div className="planner-stop" key={stop.id}>
                 <div className="planner-stop__number">{index + 1}</div>
                 <input
                   list="cities-list"
@@ -528,9 +775,68 @@ export default function App() {
     );
   }
 
+  function renderCatalogSearch() {
+    return (
+      <section className="hero">
+        <h1>Каталог рейсов</h1>
+        <p className="hero-subtitle">
+          Введите город отправления и дату. Сначала покажем направления, а по клику откроем рейсы внутри каждого.
+        </p>
+        <ClientHint clientContext={activeClientContext} />
+
+        <form className="planner-card planner-card--catalog" onSubmit={handleCatalogSearch}>
+          <div className="planner-card__top">
+            <input
+              list="cities-list"
+              className="field"
+              placeholder="Город отправления"
+              value={catalogForm.origin}
+              onChange={(event) => updateCatalogForm('origin', event.target.value)}
+              required
+            />
+
+            <label className="field field--with-icon field--date">
+              <input
+                ref={directoryDateInputRef}
+                type="date"
+                className={`date-input ${!catalogForm.date ? 'date-input--empty' : ''}`}
+                value={catalogForm.date}
+                onChange={(event) => updateCatalogForm('date', event.target.value)}
+                aria-label="Дата отправления"
+                required
+              />
+              <span className={`field-placeholder ${catalogForm.date ? 'field-placeholder--hidden' : ''}`}>
+                Дата отправления
+              </span>
+              <button
+                type="button"
+                className="calendar-trigger"
+                aria-label="Открыть календарь"
+                onClick={() => openDatePicker(directoryDateInputRef)}
+              >
+                <img src={calendarIcon} alt="" />
+              </button>
+            </label>
+          </div>
+
+          {renderCompactTransportGrid('catalog', hoveredCatalogTransport, setHoveredCatalogTransport, catalogForm.transport)}
+
+          <div className="catalog-search__actions">
+            <button className="search-button planner-card__submit" type="submit" disabled={routeLoading || loadingCities}>
+              {routeLoading ? 'Собираем…' : 'Показать направления'}
+            </button>
+          </div>
+        </form>
+
+        {error && <div className="message message--error">{error}</div>}
+      </section>
+    );
+  }
+
   function renderSingleResults() {
     const dateLabel = formatDisplayDate(searchResult?.date || form.date);
     const totalFound = searchResult.total_found ?? searchResult.count;
+    const flexibleDates = searchResult.flexible_dates || [];
 
     return (
       <section className="results-view">
@@ -585,14 +891,108 @@ export default function App() {
 
         {!error && searchResult.routes.length === 0 && (
           <div className="empty-state">
-            <h2>Маршруты не найдены</h2>
-            <p>Попробуйте изменить дату, тип транспорта или фильтры.</p>
+            <div className="empty-state__body">
+              <h2>Маршруты не найдены</h2>
+              <p>
+                {flexibleDates.length > 0
+                  ? 'На выбранную дату маршрутов нет, но мы нашли ближайшие варианты до и после.'
+                  : 'Попробуйте изменить дату, тип транспорта или фильтры.'}
+              </p>
+
+              {flexibleDates.length > 0 && (
+                <div className="flexible-date-panel">
+                  <div className="flexible-date-panel__title">Гибкая дата</div>
+
+                  <div className="flexible-date-actions">
+                    {flexibleDates.map((option) => (
+                      <button
+                        key={`${option.direction}-${option.date}`}
+                        type="button"
+                        className="flexible-date-button"
+                        onClick={() => applyFlexibleDate(option.date)}
+                        disabled={routeLoading}
+                      >
+                        <span className="flexible-date-button__label">
+                          {option.direction === 'before' ? 'Раньше' : 'Позже'}
+                        </span>
+                        <strong className="flexible-date-button__date">{formatDisplayDate(option.date)}</strong>
+                        <span className="flexible-date-button__count">
+                          {option.count} {formatCount(option.count, ['маршрут', 'маршрута', 'маршрутов'])}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         <div className="tickets-grid">
           {searchResult.routes.map((route, index) => (
             <TicketCard key={`${route.departure_iso}-${route.arrival_iso}-${index}`} route={route} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function renderCatalogResults() {
+    const transportSummary = transportTiles
+      .filter((tile) => directoryResult.transport.includes(tile.key))
+      .map((tile) => tile.label)
+      .join(', ');
+    const destinationsLabel = formatCount(directoryResult.totalDestinations, ['направление', 'направления', 'направлений']);
+    const flightsLabel = formatCount(directoryResult.totalFlights, ['рейс', 'рейса', 'рейсов']);
+
+    return (
+      <section className="results-view">
+        <div className="results-head">
+          <div>
+            <button className="link-back" onClick={resetSearch}>
+              ← Назад
+            </button>
+            <h1>Каталог направлений</h1>
+            <p>
+              {directoryResult.origin}
+              {directoryResult.selectedDate ? ` · ${formatDisplayDate(directoryResult.selectedDate)}` : ''}
+              {' · '}
+              {directoryResult.totalDestinations} {destinationsLabel}
+              {' · '}
+              {directoryResult.totalFlights} {flightsLabel}
+            </p>
+          </div>
+        </div>
+
+        <ClientHint clientContext={directoryResult.client_context || activeClientContext} />
+
+        <div className="message message--hint">
+          Флажки показывают самый дешевый и самый быстрый рейс внутри каждого направления. Такие рейсы подняты наверх.
+        </div>
+
+        <div className="filters-summary">
+          <span>{directoryResult.totalDestinations} {destinationsLabel}</span>
+          <span>{directoryResult.totalFlights} {flightsLabel}</span>
+          {transportSummary && <span>Транспорт: {transportSummary}</span>}
+        </div>
+
+        {error && <div className="message message--error">{error}</div>}
+
+        {!error && directoryResult.catalogs.length === 0 && (
+          <div className="empty-state">
+            <h2>Рейсы не найдены</h2>
+            <p>Попробуйте изменить дату или снять фильтр по транспорту.</p>
+          </div>
+        )}
+
+        <div className="catalog-grid">
+          {directoryResult.catalogs.map((catalog) => (
+            <FlightCatalog
+              key={catalog.destination}
+              catalog={catalog}
+              isOpen={Boolean(openCatalogs[catalog.destination])}
+              onToggle={() => toggleCatalog(catalog.destination)}
+            />
           ))}
         </div>
       </section>
@@ -620,6 +1020,12 @@ export default function App() {
 
         <ClientHint clientContext={itineraryResult.client_context || activeClientContext} />
 
+        <HighlightFlags
+          isCheapest={itineraryResult.isCheapest}
+          isFastest={itineraryResult.isFastest}
+          className="itinerary-result__flags"
+        />
+
         {error && <div className="message message--error">{error}</div>}
 
         {itineraryResult.found ? (
@@ -627,7 +1033,7 @@ export default function App() {
             <div className="itinerary-summary">
               <div>
                 <span>Итоговая стоимость</span>
-                <strong>{formatPrice(itineraryResult.total_cost)}</strong>
+                <strong>от {formatPrice(itineraryResult.total_cost)}</strong>
               </div>
               <div>
                 <span>Общая длительность</span>
@@ -705,11 +1111,14 @@ export default function App() {
               ))}
             </div>
 
-            {mode === 'single' ? renderSingleSearch() : renderItineraryPlanner()}
+            {mode === 'single' && renderSingleSearch()}
+            {mode === 'catalog' && renderCatalogSearch()}
+            {mode === 'itinerary' && renderItineraryPlanner()}
           </div>
         )}
 
         {resultKind === 'single' && renderSingleResults()}
+        {resultKind === 'catalog' && renderCatalogResults()}
         {resultKind === 'itinerary' && renderItineraryResults()}
       </main>
 
@@ -721,6 +1130,15 @@ export default function App() {
 
       <Modal title="Сортировка" isOpen={isSortOpen} onClose={() => setIsSortOpen(false)}>
         <div className="option-list">
+          <label className="option-row">
+            <input
+              type="radio"
+              name="sort"
+              checked={draftSortBy === NO_SORT_VALUE}
+              onChange={() => setDraftSortBy(NO_SORT_VALUE)}
+            />
+            <span>Без сортировки</span>
+          </label>
           {sortOptions.map((option) => (
             <label key={option.value} className="option-row">
               <input
@@ -733,7 +1151,10 @@ export default function App() {
             </label>
           ))}
         </div>
-        <button className="modal-apply" onClick={applySort}>Применить</button>
+        <div className="modal-actions">
+          <button type="button" className="ghost-button" onClick={resetSort}>Сбросить</button>
+          <button type="button" className="modal-apply" onClick={applySort}>Применить</button>
+        </div>
       </Modal>
 
       <Modal title="Фильтры" isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>

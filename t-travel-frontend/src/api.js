@@ -55,6 +55,10 @@ export function getRoutes(params) {
   return request('/routes', { params });
 }
 
+export function getFlightsFromCity(city) {
+  return request(`/flights/${encodeURIComponent(city)}`);
+}
+
 export function getItinerary(payload) {
   return request('/itinerary', { method: 'POST', body: payload });
 }
