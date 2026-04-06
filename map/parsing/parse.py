@@ -84,7 +84,10 @@ class Parser():
         }
 
         try:
+            t0 = time()
             response = requests.get(url, params=params, timeout=20)
+            t1 = time()
+            print(f"Один API запрос обрабатывался {t1 - t0} секунд") #   Лог
             response.raise_for_status()
             data = response.json()
             return data.get("segments", [])
@@ -212,6 +215,38 @@ class Parser():
             json.dump(routes, f, ensure_ascii=False, indent=2)
 
 
+    def load_flights(self):
+        routes = {}
+        #   Хаваем
+        print("Загружаем файл")
+        with open(self.path4flights, "r", encoding="utf-8") as f:
+            routes = json.load(f)
+            print("Файл загружен")
+        return routes
+    
+
+    def dump_flights(self, routes: dict):
+        #   Записываем
+        print("Записываем файл")
+        with open(self.path4flights, "w", encoding="utf-8") as f:
+            json.dump(routes, f, ensure_ascii=False, indent=2)
+            print("Файл записан")
+
+
+    def multiply_data(self, day_step:int):
+        routes = self.load_flights()
+        new_routes = routes
+        for from_city, route_list in routes.items():
+            for route in route_list:
+                new_route = route
+                new_route["departure"] = str(datetime.fromisoformat(route["departure"]) + timedelta(days=day_step))
+                new_route["arrival"] = str(datetime.fromisoformat(route["arrival"])+ timedelta(days=day_step))
+                new_routes[from_city].append(new_route)
+                print("Обработан маршрут", from_city, route["to"])
+            print(from_city, "Обработан")
+        new_route.dump_flights(self)
+        
+
 def get_date_range(datedelta=14, start_date=date.today()):
     dates = [start_date + timedelta(delta) for delta in range(datedelta)]
     dates = list(map(str, dates))
@@ -224,15 +259,18 @@ API_KEYS = [
     "d5f6c293-846e-4a7e-9284-b75933178188",
     "c2a50af4-c0ef-4990-a918-c638dbedf83f",
     "f929956f-faae-48b9-9bdc-20fdf37bee57",
-    "eb5ca38b-8424-4852-a59b-325602fae6fa"
+    "eb5ca38b-8424-4852-a59b-325602fae6fa",
+    "b2cb6002-dbe1-4439-af20-823432d15960"
 ]
 
 parser = Parser(
-    DATES=get_date_range(5),
+    DATES=get_date_range(2),
     API_KEYS=API_KEYS,
-    path4flights=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights1.json",
+    path4flights=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights.json",
     path4cities=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\parsing\cities.json"
 )
 
-parser.update_flights()
-# parser.update_transport_type()
+# parser.update_flights()
+parser.multiply_data(day_step=2)
+# parser.multiply_data(day_step=4)
+# parser.multiply_data(day_step=8)
