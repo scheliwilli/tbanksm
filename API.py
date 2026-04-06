@@ -1,7 +1,9 @@
 import ipaddress
 import json
 import os
+from collections import deque
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Literal, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
@@ -11,12 +13,15 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from map.map import ALL_TRANSPORTS, Flight, Graph
+from map.map import Flight, Graph
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FLIGHT_FILE = os.path.join(BASE_DIR, "map", "flights.json")
+ALL_TRANSPORTS = [1, 2, 3, 4, 5]
 
 flight_graph = Graph(flight_delay=timedelta(0), file_path=FLIGHT_FILE)
+CITY_TIMEZONES: dict[str, timezone] = {}
+SORTED_FLIGHTS_BY_CITY: dict[str, list[Flight]] = {}
 
 # 2026-04-06 05:11 (+07): fixed transport code mismatch with flights.json:
 # type 3 is bus, type 4 is electrictrain. Previously these two were swapped.
@@ -39,6 +44,20 @@ TRANSPORT_QUERY_MAP = {
 SUPPORTED_SORTS = {"cost", "duration", "transfers", "departure", "closest_time"}
 MAX_RETURNED_ROUTES = 200
 MAX_ITINERARY_OPTIONS_PER_LEG = 120
+MAX_ROUTE_SEARCH_RESULTS = 600
+MAX_ROUTE_SEARCH_STATES = 5000
+MAX_BRANCHES_PER_STATE = 80
+MAX_FLIGHTS_PER_DESTINATION = 16
+MAX_WAIT_TIME_BETWEEN_LEGS = timedelta(hours=24)
+
+
+for city, flights in flight_graph.graph.items():
+    SORTED_FLIGHTS_BY_CITY[city] = sorted(flights, key=lambda flight: flight.start_time)
+    for flight in SORTED_FLIGHTS_BY_CITY[city]:
+        if not hasattr(flight, "company"):
+            flight.company = None
+        CITY_TIMEZONES.setdefault(flight.cityA, flight.start_time.tzinfo or timezone.utc)
+        CITY_TIMEZONES.setdefault(flight.cityB, flight.arrive_time.tzinfo or timezone.utc)
 
 
 class ItineraryStop(BaseModel):
@@ -106,6 +125,7 @@ def is_public_ip(value: Optional[str]) -> bool:
     )
 
 
+@lru_cache(maxsize=256)
 def load_ip_context(ip_address: Optional[str]) -> dict:
     if not is_public_ip(ip_address):
         return {}
@@ -113,7 +133,7 @@ def load_ip_context(ip_address: Optional[str]) -> dict:
     url = f"https://ipapi.co/{ip_address}/json/"
     req = UrlRequest(url, headers={"User-Agent": "t-travel-route-planner/1.0"})
     try:
-        with urlopen(req, timeout=2.5) as response:
+        with urlopen(req, timeout=0.8) as response:
             payload = json.load(response)
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
         return {}
@@ -139,6 +159,12 @@ def safe_zoneinfo(name: Optional[str]):
         return None
 
 
+def get_city_timezone(city: Optional[str]):
+    if not city:
+        return timezone.utc
+    return CITY_TIMEZONES.get(city, timezone.utc)
+
+
 def build_client_context(request: Optional[Request], fallback_city: Optional[str] = None) -> dict:
     browser_timezone = request.headers.get("x-client-timezone") if request else None
     ip_address = get_client_ip(request) if request else None
@@ -151,7 +177,7 @@ def build_client_context(request: Optional[Request], fallback_city: Optional[str
     # 2026-04-06 05:11 (+07): times are now converted to the client's local zone.
     # We prefer the browser timezone, then IP geolocation, then the origin city's timezone.
     if target_tz is None and fallback_city:
-        target_tz = flight_graph.get_city_timezone(fallback_city)
+        target_tz = get_city_timezone(fallback_city)
         timezone_name = timezone_name or str(target_tz)
 
     if target_tz is None:
@@ -212,7 +238,7 @@ def parse_route_date(date_value: str, city: str) -> datetime:
             base_date = datetime.strptime(date_value, fmt)
             # 2026-04-06 05:11 (+07): fixed the naive/aware datetime crash by
             # anchoring the request date to the departure city's timezone.
-            return base_date.replace(tzinfo=flight_graph.get_city_timezone(city))
+            return base_date.replace(tzinfo=get_city_timezone(city))
         except ValueError:
             continue
     raise HTTPException(400, "Error format")
@@ -226,11 +252,15 @@ def total_route_duration(path: list[Flight]) -> int:
     return int((path[-1].arrive_time - path[0].start_time).total_seconds() / 60)
 
 
+def get_flight_company(fl: Flight):
+    return getattr(fl, "company", None)
+
+
 def flight_to_segment(fl: Flight, client_context: dict) -> dict:
     target_tz = client_context["tzinfo"]
     return {
         "id": fl.id,
-        "carrier": fl.company,
+        "carrier": get_flight_company(fl),
         "from": fl.cityA,
         "to": fl.cityB,
         "departure": format_datetime(fl.start_time, target_tz),
@@ -241,6 +271,122 @@ def flight_to_segment(fl: Flight, client_context: dict) -> dict:
         "transport": TRANSPORT_LABELS.get(fl.transport_type, "unknown"),
         "duration_min": int(fl.duration.total_seconds() / 60),
     }
+
+
+def _is_state_dominated(frontier: list[tuple[datetime, float]], ready_time: datetime, total_cost: float) -> bool:
+    for saved_ready_time, saved_cost in frontier:
+        if saved_ready_time <= ready_time and saved_cost <= total_cost:
+            return True
+    return False
+
+
+def _register_state(frontiers: dict[tuple[str, int], list[tuple[datetime, float]]], city: str, legs_used: int, ready_time: datetime, total_cost: float) -> bool:
+    key = (city, legs_used)
+    frontier = frontiers.setdefault(key, [])
+    if _is_state_dominated(frontier, ready_time, total_cost):
+        return False
+
+    frontier[:] = [
+        (saved_ready_time, saved_cost)
+        for saved_ready_time, saved_cost in frontier
+        if not (ready_time <= saved_ready_time and total_cost <= saved_cost)
+    ]
+    frontier.append((ready_time, total_cost))
+    frontier.sort(key=lambda item: (item[0], item[1]))
+    del frontier[12:]
+    return True
+
+
+def _iter_candidate_flights(city: str, ready_time: datetime, transport_list: list[int]):
+    flights = SORTED_FLIGHTS_BY_CITY.get(city, [])
+    latest_departure = ready_time + MAX_WAIT_TIME_BETWEEN_LEGS
+    per_destination_count: dict[str, int] = {}
+    selected = []
+
+    for flight in flights:
+        if flight.start_time < ready_time + flight_graph.flight_delay:
+            continue
+        if flight.start_time > latest_departure:
+            break
+        if flight.transport_type not in transport_list:
+            continue
+
+        destination_count = per_destination_count.get(flight.cityB, 0)
+        if destination_count >= MAX_FLIGHTS_PER_DESTINATION:
+            continue
+
+        per_destination_count[flight.cityB] = destination_count + 1
+        selected.append(flight)
+        if len(selected) >= MAX_BRANCHES_PER_STATE:
+            break
+
+    return selected
+
+
+def _collect_routes(origin: str, destination: str, not_before: datetime, transport_list: list[int], max_transfers: int) -> list[list[Flight]]:
+    if origin not in flight_graph.graph or destination not in flight_graph.graph:
+        return []
+
+    max_legs = max_transfers + 1
+    results = []
+    seen_route_signatures = set()
+    frontiers: dict[tuple[str, int], list[tuple[datetime, float]]] = {}
+    queue = deque([(origin, [], not_before, {origin})])
+    expanded_states = 0
+
+    while queue and expanded_states < MAX_ROUTE_SEARCH_STATES:
+        current_city, path, ready_time, visited = queue.popleft()
+        total_cost = total_route_cost(path) if path else 0.0
+        legs_used = len(path)
+
+        if not _register_state(frontiers, current_city, legs_used, ready_time, total_cost):
+            continue
+
+        if current_city == destination and path:
+            route_signature = tuple(flight.id for flight in path)
+            if route_signature not in seen_route_signatures:
+                seen_route_signatures.add(route_signature)
+                results.append(path)
+            if len(results) >= MAX_ROUTE_SEARCH_RESULTS:
+                break
+            continue
+
+        if legs_used >= max_legs:
+            continue
+
+        for flight in _iter_candidate_flights(current_city, ready_time, transport_list):
+            if flight.cityB in visited:
+                continue
+
+            queue.append((flight.cityB, path + [flight], flight.arrive_time, visited | {flight.cityB}))
+            expanded_states += 1
+            if expanded_states >= MAX_ROUTE_SEARCH_STATES:
+                break
+
+    return results
+
+
+@lru_cache(maxsize=256)
+def get_all_routes_cached(origin: str, destination: str, not_before_iso: str, transport_codes: tuple[int, ...], max_transfers: int) -> tuple[tuple[Flight, ...], ...]:
+    paths = _collect_routes(
+        origin=origin,
+        destination=destination,
+        not_before=datetime.fromisoformat(not_before_iso),
+        transport_list=list(transport_codes),
+        max_transfers=max_transfers,
+    )
+    return tuple(tuple(path) for path in paths)
+
+
+def get_all_routes(origin: str, destination: str, not_before: datetime, transport_list: list[int], max_transfers: int) -> list[list[Flight]]:
+    cached_paths = get_all_routes_cached(
+        origin,
+        destination,
+        not_before.isoformat(),
+        tuple(transport_list),
+        max_transfers,
+    )
+    return [list(path) for path in cached_paths]
 
 
 def route_to_payload(path: list[Flight], client_context: dict) -> dict:
@@ -373,7 +519,7 @@ def build_single_route_response(
     transport_list = parse_transport_codes(transport)
     normalized_max_transfers = 3 if max_transfers is None else max_transfers
 
-    paths = flight_graph.get_all_routes(
+    paths = get_all_routes(
         origin,
         destination,
         not_before,
@@ -436,7 +582,7 @@ def build_itinerary_response(request: Optional[Request], payload: ItineraryReque
         stay_delta = timedelta(hours=stop.stay_hours)
 
         for state in current_states:
-            routes = flight_graph.get_all_routes(
+            routes = get_all_routes(
                 state["current_city"],
                 stop.city,
                 state["ready_time"],
