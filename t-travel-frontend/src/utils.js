@@ -66,8 +66,12 @@ export function getTransportLabel(transport) {
       return 'Авиабилет';
     case 'train':
       return 'Ж/д билет';
+    case 'bus':
+      return 'Автобус';
     case 'electrictrain':
       return 'Электричка';
+    case 'ship':
+      return 'Корабль';
     default:
       return 'Маршрут';
   }
@@ -79,9 +83,34 @@ export function getTransportBadge(transport) {
       return 'Самолет';
     case 'train':
       return 'Поезд';
+    case 'bus':
+      return 'Автобус';
     case 'electrictrain':
       return 'Электричка';
+    case 'ship':
+      return 'Корабль';
     default:
       return 'Транспорт';
   }
+}
+
+export function formatStayHours(hours) {
+  if (!hours) return '0 ч';
+  if (hours < 24) return `${hours} ч`;
+
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  const parts = [`${days} д`];
+  if (restHours) parts.push(`${restHours} ч`);
+  return parts.join(' ');
+}
+
+export function formatClientLocation(clientContext) {
+  if (!clientContext) return '';
+  const city = clientContext.city || clientContext.region;
+  if (city && clientContext.timezone) {
+    return `${city} · ${clientContext.timezone}`;
+  }
+  if (city) return city;
+  return clientContext.timezone || '';
 }

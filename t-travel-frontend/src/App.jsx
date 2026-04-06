@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getCities, getRoutes } from './api';
+import { getCities, getClientContext, getItinerary, getRoutes } from './api';
 import Modal from './components/Modal';
 import TicketCard from './components/TicketCard';
-import { apiDateToUi, formatTransfers, uiDateToApi, formatDisplayDate } from './utils';
+import {
+  formatClientLocation,
+  formatDisplayDate,
+  formatDuration,
+  formatPrice,
+  formatStayHours,
+  formatTransfers,
+  uiDateToApi,
+} from './utils';
 
 import logo from '../logo.svg';
 import calendarIcon from '../calendar.svg';
@@ -14,6 +22,11 @@ import s7Image from '../s7.svg';
 const transportTiles = [
   { key: 'train', label: 'Ж/д билеты', image: rzdImage },
   { key: 'plane', label: 'Авиабилеты', image: s7Image },
+];
+
+const searchModes = [
+  { key: 'single', label: 'Обычный поиск' },
+  { key: 'itinerary', label: 'Маршрут по городам' },
 ];
 
 const sortOptions = [
@@ -32,11 +45,31 @@ const initialFilters = {
   max_duration: '',
 };
 
+function makeStop() {
+  return {
+    city: '',
+    stayHours: 24,
+  };
+}
+
+function ClientHint({ clientContext }) {
+  const locationLabel = formatClientLocation(clientContext);
+  if (!locationLabel) return null;
+
+  return (
+    <div className="location-pill">
+      Время показываем для <strong>{locationLabel}</strong>
+    </div>
+  );
+}
+
 export default function App() {
+  const [mode, setMode] = useState('single');
   const [cities, setCities] = useState([]);
   const [loadingCities, setLoadingCities] = useState(true);
   const [routeLoading, setRouteLoading] = useState(false);
   const [error, setError] = useState('');
+  const [clientContext, setClientContext] = useState(null);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [sortBy, setSortBy] = useState('cost');
@@ -44,8 +77,11 @@ export default function App() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
+  const [itineraryResult, setItineraryResult] = useState(null);
   const [hoveredTransport, setHoveredTransport] = useState(null);
-  const dateInputRef = useRef(null);
+  const [hoveredPlannerTransport, setHoveredPlannerTransport] = useState(null);
+  const singleDateInputRef = useRef(null);
+  const itineraryDateInputRef = useRef(null);
 
   const [form, setForm] = useState(() => ({
     origin: '',
@@ -54,16 +90,29 @@ export default function App() {
     transport: [],
   }));
 
+  const [itineraryForm, setItineraryForm] = useState(() => ({
+    origin: '',
+    date: '',
+    transport: [],
+    stops: [makeStop()],
+  }));
+
   useEffect(() => {
     let mounted = true;
-    getCities()
-      .then((data) => {
+
+    Promise.allSettled([getCities(), getClientContext()])
+      .then(([citiesResult, clientResult]) => {
         if (!mounted) return;
-        setCities(data.cities || []);
-      })
-      .catch((err) => {
-        if (!mounted) return;
-        setError(err.message);
+
+        if (citiesResult.status === 'fulfilled') {
+          setCities(citiesResult.value.cities || []);
+        } else {
+          setError(citiesResult.reason?.message || 'Не удалось загрузить список городов');
+        }
+
+        if (clientResult.status === 'fulfilled') {
+          setClientContext(clientResult.value);
+        }
       })
       .finally(() => {
         if (mounted) setLoadingCities(false);
@@ -74,14 +123,22 @@ export default function App() {
     };
   }, []);
 
-  const cityOptions = useMemo(() => cities.sort((a, b) => a.localeCompare(b, 'ru')), [cities]);
+  const cityOptions = useMemo(() => [...cities].sort((a, b) => a.localeCompare(b, 'ru')), [cities]);
+  const activeClientContext = searchResult?.client_context || itineraryResult?.client_context || clientContext;
+  const activeSortLabel = sortOptions.find((item) => item.value === sortBy)?.label || 'Сортировка';
+  const resultKind = itineraryResult ? 'itinerary' : searchResult ? 'single' : null;
+
+  useEffect(() => {
+    if (searchResult && !itineraryResult) {
+      handleSearch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, sortBy]);
 
   async function handleSearch(event) {
     event?.preventDefault();
     setError('');
     setRouteLoading(true);
-
-    const selectedTransport = form.transport.length === 1 ? form.transport[0] : undefined;
 
     try {
       const data = await getRoutes({
@@ -90,7 +147,7 @@ export default function App() {
         date: uiDateToApi(form.date),
         sort_by: sortBy,
         sort_order: 'asc',
-        transport: selectedTransport,
+        transport: form.transport,
         max_transfers: filters.max_transfers,
         min_cost: filters.min_cost,
         max_cost: filters.max_cost,
@@ -105,8 +162,41 @@ export default function App() {
       }));
 
       setSearchResult({ ...data, routes });
+      setItineraryResult(null);
+      setClientContext((current) => data.client_context || current);
     } catch (err) {
       setSearchResult(null);
+      setError(err.message);
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
+  async function handleItinerarySearch(event) {
+    event?.preventDefault();
+    setError('');
+    setRouteLoading(true);
+
+    try {
+      const data = await getItinerary({
+        origin: itineraryForm.origin,
+        date: uiDateToApi(itineraryForm.date),
+        transport: itineraryForm.transport,
+        max_transfers: filters.max_transfers,
+        stops: itineraryForm.stops.map((stop) => ({
+          city: stop.city,
+          stay_hours: Number(stop.stayHours) || 0,
+        })),
+      });
+
+      setItineraryResult(data);
+      setSearchResult(null);
+      setClientContext((current) => data.client_context || current);
+      if (!data.found && data.message) {
+        setError(data.message);
+      }
+    } catch (err) {
+      setItineraryResult(null);
       setError(err.message);
     } finally {
       setRouteLoading(false);
@@ -117,8 +207,38 @@ export default function App() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function toggleTransport(type) {
-    setForm((current) => {
+  function updateItineraryForm(key, value) {
+    setItineraryForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateStop(index, key, value) {
+    setItineraryForm((current) => ({
+      ...current,
+      stops: current.stops.map((stop, stopIndex) => (
+        stopIndex === index
+          ? { ...stop, [key]: value }
+          : stop
+      )),
+    }));
+  }
+
+  function addStop() {
+    setItineraryForm((current) => ({
+      ...current,
+      stops: [...current.stops, makeStop()],
+    }));
+  }
+
+  function removeStop(index) {
+    setItineraryForm((current) => ({
+      ...current,
+      stops: current.stops.filter((_, stopIndex) => stopIndex !== index),
+    }));
+  }
+
+  function toggleTransport(stateKey, type) {
+    const setter = stateKey === 'single' ? setForm : setItineraryForm;
+    setter((current) => {
       const isActive = current.transport.includes(type);
       return {
         ...current,
@@ -139,6 +259,8 @@ export default function App() {
 
   function resetSearch() {
     setSearchResult(null);
+    setItineraryResult(null);
+    setError('');
   }
 
   function openFilters() {
@@ -161,8 +283,8 @@ export default function App() {
     setIsSortOpen(false);
   }
 
-  function openDatePicker() {
-    const input = dateInputRef.current;
+  function openDatePicker(ref) {
+    const input = ref.current;
     if (!input) return;
 
     input.focus();
@@ -173,15 +295,390 @@ export default function App() {
     input.click();
   }
 
-  useEffect(() => {
-    if (searchResult) {
-      handleSearch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, sortBy]);
+  function renderTransportTiles(transportStateKey, hoveredState, setHoveredState, selectedTransport) {
+    return (
+      <div className="search-card__mediaside">
+        {transportTiles.map((tile) => {
+          const isSelected = selectedTransport.includes(tile.key);
+          const isHovered = hoveredState === tile.key;
 
-  const activeSortLabel = sortOptions.find((item) => item.value === sortBy)?.label || 'Сортировка';
-  const dateLabel = formatDisplayDate(searchResult?.date || form.date);
+          return (
+            <button
+              key={tile.key}
+              type="button"
+              className={`transport-tile ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
+              onMouseEnter={() => setHoveredState(tile.key)}
+              onMouseLeave={() => setHoveredState(null)}
+              onFocus={() => setHoveredState(tile.key)}
+              onBlur={() => setHoveredState(null)}
+              onClick={() => toggleTransport(transportStateKey, tile.key)}
+              aria-pressed={isSelected}
+            >
+              <img src={tile.image} alt={tile.label} />
+              <span>{tile.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderSingleSearch() {
+    return (
+      <section className="hero">
+        <h1>Т-Путешествия</h1>
+        <ClientHint clientContext={activeClientContext} />
+
+        <form className="search-card" onSubmit={handleSearch}>
+          <div className="search-card__layout">
+            <div className="search-card__formside">
+              <div className="search-row search-row--cities">
+                <input
+                  list="cities-list"
+                  className="field"
+                  placeholder="Откуда"
+                  value={form.origin}
+                  onChange={(event) => updateForm('origin', event.target.value)}
+                  required
+                />
+
+                <button
+                  type="button"
+                  className="swap-button"
+                  onClick={swapCities}
+                  aria-label="Поменять местами города"
+                >
+                  <img src={swapIcon} alt="" />
+                </button>
+
+                <input
+                  list="cities-list"
+                  className="field"
+                  placeholder="Куда"
+                  value={form.destination}
+                  onChange={(event) => updateForm('destination', event.target.value)}
+                  required
+                />
+              </div>
+
+              <label className="field field--with-icon field--date">
+                {/* 2026-04-06 05:11 (+07): fixed the calendar field so the custom
+                    placeholder disappears after selection and the picked date stays visible. */}
+                <input
+                  ref={singleDateInputRef}
+                  type="date"
+                  className={`date-input ${!form.date ? 'date-input--empty' : ''}`}
+                  value={form.date}
+                  onChange={(event) => updateForm('date', event.target.value)}
+                  aria-label="Дата отправления"
+                  required
+                />
+                <span className={`field-placeholder ${form.date ? 'field-placeholder--hidden' : ''}`}>
+                  Дата отправления
+                </span>
+                <button
+                  type="button"
+                  className="calendar-trigger"
+                  aria-label="Открыть календарь"
+                  onClick={() => openDatePicker(singleDateInputRef)}
+                >
+                  <img src={calendarIcon} alt="" />
+                </button>
+              </label>
+            </div>
+
+            {renderTransportTiles('single', hoveredTransport, setHoveredTransport, form.transport)}
+          </div>
+
+          <button
+            className="search-button"
+            type="submit"
+            disabled={routeLoading || loadingCities}
+          >
+            {routeLoading ? 'Ищем…' : 'Найти'}
+          </button>
+        </form>
+
+        {error && <div className="message message--error">{error}</div>}
+      </section>
+    );
+  }
+
+  function renderItineraryPlanner() {
+    return (
+      <section className="hero">
+        <h1>Маршрут по нескольким городам</h1>
+        <p className="hero-subtitle">
+          Добавьте города в порядке посещения, укажите задержку в каждом и мы подберем самый выгодный путь по цене.
+        </p>
+        <ClientHint clientContext={activeClientContext} />
+
+        <form className="planner-card" onSubmit={handleItinerarySearch}>
+          <div className="planner-card__top">
+            <input
+              list="cities-list"
+              className="field"
+              placeholder="Стартовый город"
+              value={itineraryForm.origin}
+              onChange={(event) => updateItineraryForm('origin', event.target.value)}
+              required
+            />
+
+            <label className="field field--with-icon field--date">
+              <input
+                ref={itineraryDateInputRef}
+                type="date"
+                className={`date-input ${!itineraryForm.date ? 'date-input--empty' : ''}`}
+                value={itineraryForm.date}
+                onChange={(event) => updateItineraryForm('date', event.target.value)}
+                aria-label="Дата старта"
+                required
+              />
+              <span className={`field-placeholder ${itineraryForm.date ? 'field-placeholder--hidden' : ''}`}>
+                Дата старта
+              </span>
+              <button
+                type="button"
+                className="calendar-trigger"
+                aria-label="Открыть календарь"
+                onClick={() => openDatePicker(itineraryDateInputRef)}
+              >
+                <img src={calendarIcon} alt="" />
+              </button>
+            </label>
+          </div>
+
+          <div className="planner-card__transport">
+            <div className="planner-card__label">Транспорт</div>
+            <div className="planner-transport-grid">
+              {transportTiles.map((tile) => {
+                const isSelected = itineraryForm.transport.includes(tile.key);
+                const isHovered = hoveredPlannerTransport === tile.key;
+                return (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    className={`transport-tile transport-tile--compact ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
+                    onMouseEnter={() => setHoveredPlannerTransport(tile.key)}
+                    onMouseLeave={() => setHoveredPlannerTransport(null)}
+                    onFocus={() => setHoveredPlannerTransport(tile.key)}
+                    onBlur={() => setHoveredPlannerTransport(null)}
+                    onClick={() => toggleTransport('itinerary', tile.key)}
+                    aria-pressed={isSelected}
+                  >
+                    <img src={tile.image} alt={tile.label} />
+                    <span>{tile.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="planner-card__label">Города и задержки</div>
+          <div className="planner-stop-list">
+            {itineraryForm.stops.map((stop, index) => (
+              <div className="planner-stop" key={`${index}-${stop.city}`}>
+                <div className="planner-stop__number">{index + 1}</div>
+                <input
+                  list="cities-list"
+                  className="field"
+                  placeholder="Город для посещения"
+                  value={stop.city}
+                  onChange={(event) => updateStop(index, 'city', event.target.value)}
+                  required
+                />
+                <div className="planner-stop__stay">
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    max="720"
+                    value={stop.stayHours}
+                    onChange={(event) => updateStop(index, 'stayHours', event.target.value)}
+                    placeholder="24"
+                  />
+                  <span>часов</span>
+                </div>
+                <div className="planner-stop__meta">Остановка: {formatStayHours(Number(stop.stayHours) || 0)}</div>
+                {itineraryForm.stops.length > 1 && (
+                  <button
+                    type="button"
+                    className="planner-stop__remove"
+                    onClick={() => removeStop(index)}
+                  >
+                    Удалить
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="planner-card__actions">
+            <button type="button" className="ghost-button ghost-button--inline" onClick={addStop}>
+              + Добавить город
+            </button>
+            <button className="search-button planner-card__submit" type="submit" disabled={routeLoading || loadingCities}>
+              {routeLoading ? 'Строим…' : 'Построить маршрут'}
+            </button>
+          </div>
+        </form>
+
+        {error && <div className="message message--error">{error}</div>}
+      </section>
+    );
+  }
+
+  function renderSingleResults() {
+    const dateLabel = formatDisplayDate(searchResult?.date || form.date);
+    const totalFound = searchResult.total_found ?? searchResult.count;
+
+    return (
+      <section className="results-view">
+        <div className="results-head">
+          <div>
+            <button className="link-back" onClick={resetSearch}>
+              ← Назад
+            </button>
+            <h1>Подходящие билеты</h1>
+            <p>
+              {searchResult.origin} → {searchResult.destination}
+              {dateLabel ? ` · ${dateLabel}` : ''}
+              {' · '}
+              {totalFound} {totalFound === 1 ? 'маршрут' : totalFound < 5 ? 'маршрута' : 'маршрутов'}
+            </p>
+          </div>
+
+          <div className="results-actions">
+            <button className="ghost-button" onClick={openSort}>
+              <img src={sortIcon} alt="" />
+              {activeSortLabel}
+            </button>
+            <button className="ghost-button" onClick={openFilters}>
+              Фильтры
+            </button>
+          </div>
+        </div>
+
+        <ClientHint clientContext={searchResult.client_context || activeClientContext} />
+
+        {searchResult.is_truncated && (
+          <div className="message message--hint">
+            Показываем первые {searchResult.count} маршрутов из {totalFound}, чтобы список оставался быстрым и удобным.
+          </div>
+        )}
+
+        <div className="filters-summary">
+          <span>Пересадки: до {filters.max_transfers}</span>
+          {(filters.min_cost || filters.max_cost) && (
+            <span>
+              Цена: {filters.min_cost || '0'} — {filters.max_cost || '∞'} ₽
+            </span>
+          )}
+          {(filters.min_duration || filters.max_duration) && (
+            <span>
+              В пути: {filters.min_duration || '0'} — {filters.max_duration || '∞'} мин
+            </span>
+          )}
+        </div>
+
+        {error && <div className="message message--error">{error}</div>}
+
+        {!error && searchResult.routes.length === 0 && (
+          <div className="empty-state">
+            <h2>Маршруты не найдены</h2>
+            <p>Попробуйте изменить дату, тип транспорта или фильтры.</p>
+          </div>
+        )}
+
+        <div className="tickets-grid">
+          {searchResult.routes.map((route, index) => (
+            <TicketCard key={`${route.departure_iso}-${route.arrival_iso}-${index}`} route={route} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function renderItineraryResults() {
+    const itineraryStops = itineraryResult?.stops || [];
+
+    return (
+      <section className="results-view">
+        <div className="results-head">
+          <div>
+            <button className="link-back" onClick={resetSearch}>
+              ← Назад
+            </button>
+            <h1>Оптимальный маршрут по городам</h1>
+            <p>
+              {itineraryResult.origin}
+              {itineraryStops.map((stop) => ` → ${stop.city}`).join('')}
+              {itineraryResult.date ? ` · ${formatDisplayDate(itineraryResult.date)}` : ''}
+            </p>
+          </div>
+        </div>
+
+        <ClientHint clientContext={itineraryResult.client_context || activeClientContext} />
+
+        {error && <div className="message message--error">{error}</div>}
+
+        {itineraryResult.found ? (
+          <>
+            <div className="itinerary-summary">
+              <div>
+                <span>Итоговая стоимость</span>
+                <strong>{formatPrice(itineraryResult.total_cost)}</strong>
+              </div>
+              <div>
+                <span>Общая длительность</span>
+                <strong>{formatDuration(itineraryResult.total_duration_min)}</strong>
+              </div>
+              <div>
+                <span>Пересадки</span>
+                <strong>{formatTransfers(itineraryResult.total_transfers)}</strong>
+              </div>
+              <div>
+                <span>Остановок</span>
+                <strong>{itineraryStops.length}</strong>
+              </div>
+            </div>
+
+            <div className="itinerary-stop-strip">
+              {itineraryStops.map((stop, index) => (
+                <div className="itinerary-stop-chip" key={`${stop.city}-${index}`}>
+                  <strong>{stop.city}</strong>
+                  <span>{formatStayHours(stop.stay_hours)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="itinerary-legs">
+              {itineraryResult.legs.map((leg, index) => (
+                <div className="itinerary-leg" key={`${leg.departure_iso}-${leg.arrival_iso}-${index}`}>
+                  <div className="itinerary-leg__header">
+                    <div>
+                      <span>Этап {index + 1}</span>
+                      <strong>{leg.origin} → {leg.destination}</strong>
+                    </div>
+                    <div>
+                      <span>Остановка после прибытия</span>
+                      <strong>{leg.stay_label_after_arrival}</strong>
+                    </div>
+                  </div>
+                  <TicketCard route={leg} />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="empty-state">
+            <h2>Маршрут не найден</h2>
+            <p>{itineraryResult.message || 'Попробуйте изменить список городов, дату старта или задержки.'}</p>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   return (
     <div className="page-shell">
@@ -189,166 +686,38 @@ export default function App() {
         <img src={logo} alt="Т-Путешествия" className="topbar__logo" />
       </header>
 
-      <main className={`page-content ${searchResult ? 'page-content--results' : ''}`}>
-        {!searchResult && (
-          <section className="hero">
-            <h1>Т-Путешествия</h1>
-
-            <form className="search-card" onSubmit={handleSearch}>
-              <div className="search-card__layout">
-                <div className="search-card__formside">
-                  <div className="search-row search-row--cities">
-                    <input
-                      list="cities-list"
-                      className="field"
-                      placeholder="Откуда"
-                      value={form.origin}
-                      onChange={(event) => updateForm('origin', event.target.value)}
-                    />
-
-                    <button
-                      type="button"
-                      className="swap-button"
-                      onClick={swapCities}
-                      aria-label="Поменять местами города"
-                    >
-                      <img src={swapIcon} alt="" />
-                    </button>
-
-                    <input
-                      list="cities-list"
-                      className="field"
-                      placeholder="Куда"
-                      value={form.destination}
-                      onChange={(event) => updateForm('destination', event.target.value)}
-                    />
-                  </div>
-
-                  <label className="field field--with-icon field--date">
-                    <input
-                      ref={dateInputRef}
-                      type="date"
-                      className="date-input date-input--empty"
-                      value={form.date}
-                      onChange={(event) => updateForm('date', event.target.value)}
-                      aria-label="Дата отправления"
-                    />
-                    <span className={`field-placeholder ${form.date ? 'field-placeholder--filled' : ''}`}>
-                      {form.date ? formatDisplayDate(form.date) : 'Дата отправления'}
-                    </span>
-                    <button
-                      type="button"
-                      className="calendar-trigger"
-                      aria-label="Открыть календарь"
-                      onClick={openDatePicker}
-                    >
-                      <img src={calendarIcon} alt="" />
-                    </button>
-                  </label>
-                </div>
-
-                <div className="search-card__mediaside">
-                  {transportTiles.map((tile) => {
-                    const isSelected = form.transport.includes(tile.key);
-                    const isHovered = hoveredTransport === tile.key;
-
-                    return (
-                      <button
-                        key={tile.key}
-                        type="button"
-                        className={`transport-tile ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
-                        onMouseEnter={() => setHoveredTransport(tile.key)}
-                        onMouseLeave={() => setHoveredTransport(null)}
-                        onFocus={() => setHoveredTransport(tile.key)}
-                        onBlur={() => setHoveredTransport(null)}
-                        onClick={() => toggleTransport(tile.key)}
-                        aria-pressed={isSelected}
-                      >
-                        <img src={tile.image} alt={tile.label} />
-                        <span>{tile.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                className="search-button"
-                type="submit"
-                disabled={routeLoading || loadingCities}
-              >
-                {routeLoading ? 'Ищем…' : 'Найти'}
-              </button>
-            </form>
-
-            <datalist id="cities-list">
-              {cityOptions.map((city) => (
-                <option value={city} key={city} />
-              ))}
-            </datalist>
-
-            {error && <div className="message message--error">{error}</div>}
-          </section>
-        )}
-
-        {searchResult && (
-          <section className="results-view">
-            <div className="results-head">
-              <div>
-                <button className="link-back" onClick={resetSearch}>
-                  ← Назад
+      <main className={`page-content ${resultKind ? 'page-content--results' : ''}`}>
+        {!resultKind && (
+          <div className="mode-shell">
+            <div className="mode-switch">
+              {searchModes.map((searchMode) => (
+                <button
+                  key={searchMode.key}
+                  type="button"
+                  className={`mode-switch__button ${mode === searchMode.key ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setError('');
+                    setMode(searchMode.key);
+                  }}
+                >
+                  {searchMode.label}
                 </button>
-                <h1>Подходящие билеты</h1>
-                <p>
-                  {searchResult.origin} → {searchResult.destination}
-                  {dateLabel ? ` · ${dateLabel}` : ''}
-                  {' · '}
-                  {searchResult.count} {searchResult.count === 1 ? 'маршрут' : searchResult.count < 5 ? 'маршрута' : 'маршрутов'}
-                </p>
-              </div>
-
-              <div className="results-actions">
-                <button className="ghost-button" onClick={openSort}>
-                  <img src={sortIcon} alt="" />
-                  {activeSortLabel}
-                </button>
-                <button className="ghost-button" onClick={openFilters}>
-                  Фильтры
-                </button>
-              </div>
-            </div>
-
-            <div className="filters-summary">
-              <span>Пересадки: до {filters.max_transfers}</span>
-              {(filters.min_cost || filters.max_cost) && (
-                <span>
-                  Цена: {filters.min_cost || '0'} — {filters.max_cost || '∞'} ₽
-                </span>
-              )}
-              {(filters.min_duration || filters.max_duration) && (
-                <span>
-                  В пути: {filters.min_duration || '0'} — {filters.max_duration || '∞'} мин
-                </span>
-              )}
-            </div>
-
-            {error && <div className="message message--error">{error}</div>}
-
-            {!error && searchResult.routes.length === 0 && (
-              <div className="empty-state">
-                <h2>Маршруты не найдены</h2>
-                <p>Попробуйте изменить дату, тип транспорта или фильтры.</p>
-              </div>
-            )}
-
-            <div className="tickets-grid">
-              {searchResult.routes.map((route, index) => (
-                <TicketCard key={`${route.departure}-${route.arrival}-${index}`} route={route} />
               ))}
             </div>
-          </section>
+
+            {mode === 'single' ? renderSingleSearch() : renderItineraryPlanner()}
+          </div>
         )}
+
+        {resultKind === 'single' && renderSingleResults()}
+        {resultKind === 'itinerary' && renderItineraryResults()}
       </main>
+
+      <datalist id="cities-list">
+        {cityOptions.map((city) => (
+          <option value={city} key={city} />
+        ))}
+      </datalist>
 
       <Modal title="Сортировка" isOpen={isSortOpen} onClose={() => setIsSortOpen(false)}>
         <div className="option-list">

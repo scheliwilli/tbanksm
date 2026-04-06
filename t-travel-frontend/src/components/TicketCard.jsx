@@ -20,6 +20,7 @@ function SegmentRow({ segment, isLast }) {
           <span className="segment-badge">{getTransportBadge(segment.transport)}</span>
           <span>{formatDuration(segment.duration_min)}</span>
           <span>Прибытие {segment.arrival.slice(11)}</span>
+          {segment.carrier && <span>{segment.carrier}</span>}
         </div>
       </div>
     </div>
@@ -27,13 +28,14 @@ function SegmentRow({ segment, isLast }) {
 }
 
 export default function TicketCard({ route }) {
-  const primaryTransport = route.segments[0]?.transport;
+  const transportKinds = Array.from(new Set(route.segments.map((segment) => segment.transport)));
+  const primaryTransport = transportKinds.length === 1 ? transportKinds[0] : undefined;
 
   return (
     <article className="ticket-card">
       <div className="ticket-card__top">
         <div>
-          <div className="ticket-card__eyebrow">{getTransportLabel(primaryTransport)}</div>
+          <div className="ticket-card__eyebrow">{primaryTransport ? getTransportLabel(primaryTransport) : 'Смешанный маршрут'}</div>
           <h3>
             {route.origin || route.segments[0]?.from} → {route.destination || route.segments.at(-1)?.to}
           </h3>
@@ -63,7 +65,7 @@ export default function TicketCard({ route }) {
       <div className="ticket-card__segments">
         {route.segments.map((segment, index) => (
           <SegmentRow
-            key={`${segment.id}-${index}`}
+            key={`${segment.id || segment.departure_iso || segment.departure}-${index}`}
             segment={segment}
             isLast={index === route.segments.length - 1}
           />

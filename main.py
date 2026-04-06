@@ -18,3 +18,8 @@ print('--'*65 + '\n')
 print(*lst3)
 print('--'*65 + '\n')
 print(*lst5)
+
+cnt = 0
+for city, route_list in map.graph.items():
+    cnt += len(route_list)
+print(cnt)
