@@ -89,6 +89,7 @@ class Parser():
 
             carrier = thread.get("carrier")
             company = carrier.get("title") if carrier else None
+            company_url = carrier.get("url") if carrier else None
 
             dep = s.get("departure")
             arr = s.get("arrival")
@@ -116,6 +117,7 @@ class Parser():
                 "to": to_name,
                 "type": transport,
                 "company": company,
+                "company_url" : company_url,
                 "number": number,
                 "departure": dep,
                 "arrival": arr,
