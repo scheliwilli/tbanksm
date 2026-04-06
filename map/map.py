@@ -188,6 +188,8 @@ class Graph:
             lst = ['Нет подходящих рейсов😭']
         return lst
 
+
+
     def get_all_moves(self, cityA, departure_time):
         lst = [flight for flight in self.graph[cityA] if flight.start_time.date() == departure_time.date()]
         if len(lst) == 0:
@@ -217,6 +219,11 @@ class Graph:
         pass
 
 
+
+    def all_tourse(self, cityA, cityB):
+        time = datetime.now()
+        lst = [flight for flight in self.graph[cityA] if flight.cityB == cityB and flight.start_time.date() == time.date()]
+        return lst
 
     def build_tour(
             self,
