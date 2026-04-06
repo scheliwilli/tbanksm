@@ -6,7 +6,7 @@ export default function Modal({ title, isOpen, onClose, children }) {
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Закрыть">
             ×
           </button>
         </div>

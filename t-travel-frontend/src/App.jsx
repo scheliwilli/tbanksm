@@ -34,13 +34,29 @@ const searchModes = [
 ];
 
 const sortOptions = [
-  { value: 'cost', label: 'Сначала дешевле' },
-  { value: 'duration', label: 'Сначала быстрее' },
-  { value: 'transfers', label: 'Меньше пересадок' },
-  { value: 'departure', label: 'По времени отправления' },
-  { value: 'closest_time', label: 'Ближайшее время' },
+  { value: 'cost', sortBy: 'cost', sortOrder: 'asc', label: 'Сначала дешевле' },
+  { value: 'cost_desc', sortBy: 'cost', sortOrder: 'desc', label: 'Сначала дороже' },
+  { value: 'duration', sortBy: 'duration', sortOrder: 'asc', label: 'Сначала быстрее' },
+  { value: 'transfers', sortBy: 'transfers', sortOrder: 'asc', label: 'Меньше пересадок' },
+  { value: 'departure', sortBy: 'departure', sortOrder: 'asc', label: 'По времени отправления' },
+  { value: 'closest_time', sortBy: 'closest_time', sortOrder: 'asc', label: 'Ближайшее время' },
 ];
 const NO_SORT_VALUE = 'none';
+
+function getSortRequestConfig(selectedSort) {
+  const activeOption = sortOptions.find((option) => option.value === selectedSort);
+  if (!activeOption) {
+    return {
+      sortBy: undefined,
+      sortOrder: 'asc',
+    };
+  }
+
+  return {
+    sortBy: activeOption.sortBy,
+    sortOrder: activeOption.sortOrder,
+  };
+}
 
 const initialFilters = {
   max_transfers: 3,
@@ -301,6 +317,7 @@ export default function App() {
       ...form,
       ...overrides,
     };
+    const { sortBy: apiSortBy, sortOrder: apiSortOrder } = getSortRequestConfig(sortBy);
 
     if (Object.keys(overrides).length > 0) {
       setForm(nextForm);
@@ -314,8 +331,8 @@ export default function App() {
         origin: nextForm.origin,
         destination: nextForm.destination,
         date: uiDateToApi(nextForm.date),
-        sort_by: sortBy === NO_SORT_VALUE ? undefined : sortBy,
-        sort_order: 'asc',
+        sort_by: apiSortBy,
+        sort_order: apiSortOrder,
         transport: nextForm.transport,
         max_transfers: filters.max_transfers,
         min_cost: filters.min_cost,
@@ -324,14 +341,17 @@ export default function App() {
         max_duration: filters.max_duration,
       });
 
-      const routes = prioritizeHighlightedItems(dedupeItemsByKey(
+      const uniqueRoutes = dedupeItemsByKey(
         (data.routes || []).map((route) => ({
           ...route,
           origin: data.origin,
           destination: data.destination,
         })),
         getRouteKey,
-      ));
+      );
+      const routes = sortBy === NO_SORT_VALUE
+        ? prioritizeHighlightedItems(uniqueRoutes)
+        : uniqueRoutes;
 
       setSearchResult({ ...data, routes });
       setDirectoryResult(null);

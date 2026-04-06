@@ -317,6 +317,20 @@ button {
   font-size: 22px;
 }
 
+.modal-apply {
+  height: 56px;
+  border-radius: 24px;
+  padding: 0 24px;
+  box-shadow: 0 12px 24px rgba(255, 221, 45, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.modal-apply:hover,
+.modal-apply:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(255, 221, 45, 0.34);
+}
+
 .search-button:disabled {
   opacity: 0.75;
   cursor: wait;
@@ -1006,18 +1020,18 @@ button {
 
 .modal-card {
   width: min(100%, 560px);
-  border-radius: 28px;
+  border-radius: 32px;
   background: var(--white);
   box-shadow: var(--shadow-soft);
-  padding: 24px;
+  padding: 30px;
 }
 
 .modal-head {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 26px;
 }
 
 .modal-head h2 {
@@ -1026,30 +1040,42 @@ button {
 }
 
 .modal-close {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 20px;
   background: var(--surface);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  font-size: 32px;
+  line-height: 1;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  background: var(--surface-deep);
+  transform: translateY(-1px);
 }
 
 .option-list,
 .filter-group,
 .filter-grid {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .option-list {
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 
 .option-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 18px;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 24px;
   background: var(--surface);
 }
 
@@ -1060,48 +1086,59 @@ button {
 
 .filter-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 20px 0;
+  margin: 24px 0;
+  column-gap: 18px;
+  row-gap: 20px;
 }
 
 .filter-grid label {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .filter-grid input {
-  height: 48px;
+  height: 56px;
   width: 100%;
   min-width: 0;
-  border-radius: 16px;
+  border-radius: 22px;
   border: 0;
   background: var(--surface);
-  padding: 0 14px;
+  padding: 0 18px;
 }
 
 .filter-preview {
   display: flex;
-  gap: 12px;
-  margin-top: 20px;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-top: 24px;
+  margin-bottom: 28px;
 }
 
 .filter-preview > div {
   flex: 1;
   background: var(--surface);
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.filter-preview strong {
+  display: block;
 }
 
 .modal-actions {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  margin-top: 8px;
 }
 
 .modal-actions .ghost-button,
 .modal-actions .modal-apply {
   flex: 1;
   justify-content: center;
+  min-height: 56px;
+  padding: 0 24px;
 }
 
 @media (max-width: 900px) {
@@ -1182,6 +1219,13 @@ button {
     height: 44px;
   }
 
+  .modal-apply,
+  .modal-actions .ghost-button,
+  .modal-actions .modal-apply {
+    min-height: 44px;
+    border-radius: 20px;
+  }
+
   .transport-tile {
     min-height: 88px;
   }
@@ -1233,6 +1277,10 @@ button {
 
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-preview {
+    flex-direction: column;
   }
 
   .planner-transport-grid,
