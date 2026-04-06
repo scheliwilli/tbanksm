@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timezone, timedelta
 from collections import deque
 import heapq
@@ -182,7 +183,7 @@ class Graph:
         lst = [flight for flight in self.graph[cityA]
                 if flight.cityB == cityB
                 and flight.check_transport_list(transport_list)
-                and flight.start_time >= departure_time]
+                and ((flight.start_time - timedelta(days=1)).date() <= departure_time.date() <= (flight.start_time + timedelta(days=1)).date())]
         if len(lst) == 0:
             lst = ['Нет подходящих рейсов😭']
         return lst
@@ -201,3 +202,41 @@ class Graph:
                     if flight2.cityB == cityA and flight2.start_time.date() == back_time.date() and flight.arrive_time+self.flight_delay < flight2.start_time:
                         lst.append((flight, flight2))
         return lst
+
+
+    def __find_cheapest_way(self,
+                            cityA: str,
+                            city_lst: list[str],
+                            departure_time: datetime,
+                            time_delta: timedelta,
+                            transport_list = [1, 2, 3]):
+        """
+        вспомогательная функция для build_tour
+        """
+
+        pass
+
+
+
+    def build_tour(
+            self,
+            cityA, #город отправления
+            city_list: list[str], #список городов, которые хочется посетить
+            departure_time: datetime, #время вылета/выезда
+            chill_time : timedelta,  #сколько дней клиент хочет оставться в городе
+            transport_list=[1, 2, 3] # разрешённые виды транспорта
+    ):
+        """
+        Эта функция позволяет строить тур
+         по выбранным городам
+          за минимальную цену
+        """
+        t = 1.0
+        n = len(city_list)
+        for i in range(1000):
+            t *= 0.99
+            cur_lst = city_list
+            v = random.randint() % n
+            u = random.randint() % n
+            cur_lst[u], cur_lst[v] = cur_lst[v], cur_lst[u]
+        pass
