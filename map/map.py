@@ -4,6 +4,8 @@ from collections import deque
 import heapq
 import json
 
+from map.flight_generator import flights
+
 
 class Flight:
     costs = [0, 0.008, 0.3, 0.012, 0.001]
@@ -223,6 +225,11 @@ class Graph:
     def all_tourse(self, cityA, cityB):
         time = datetime.now()
         lst = [flight for flight in self.graph[cityA] if flight.cityB == cityB and flight.start_time.date() == time.date()]
+        return lst
+
+    def get_random_tour(self, cityA):
+        time = datetime.now()
+        lst = [flight for flight in self.graph[cityA] if flight.start_time >= time]
         return lst
 
     def build_tour(
