@@ -25,11 +25,13 @@ class Parser():
     def __init__ (
             self,
             DATES:list,
-            API_KEY="020aed89-3a0b-4c4e-8766-ce988f42c520",
+            API_KEYS:list,
             path4flights=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights.json",
             path4cities=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\parsing\cities.json"
     ):
-        self.API_KEY = API_KEY
+        self.API_KEYS = API_KEYS
+        self.cur_key_id = 0
+        self.cur_key = API_KEYS[self.cur_key_id]
         self.DATES = DATES
         # Открываем файл для чтения
         with open(path4cities, "r", encoding="utf-8") as f:
@@ -39,11 +41,22 @@ class Parser():
         self.path4flights = path4flights
 
 
+    def rotate_key(self):
+        self.cur_key_id += 1
+        if (self.cur_key_id < len(API_KEYS)):
+            self.cur_key = self.API_KEYS[self.cur_key_id]
+
+    
+    def has_free_keys(self):
+        return (self.cur_key_id < len(API_KEYS))
+            
+
+
     def get_routes(self, from_code, to_code, date):
         url = "https://api.rasp.yandex.net/v3.0/search/"
 
         params = {
-            "apikey": self.API_KEY,
+            "apikey": self.cur_key,
             "from": from_code, # код города отправления
             "to": to_code, # код города назначения
             "format": "json",
@@ -61,7 +74,7 @@ class Parser():
         url = "https://api.rasp.yandex-net.ru/v3.0/search/"
 
         params = {
-            "apikey": self.API_KEY,
+            "apikey": self.cur_key,
             "from": from_code,
             "to": to_code,
             "format": "json",
@@ -75,7 +88,22 @@ class Parser():
             data = response.json()
             return data.get("segments", [])
         except requests.exceptions.RequestException as e:
-            print(f"Ошибка запроса {from_code} -> {to_code} на {date}: {e}")
+            if response.status_code == 429:
+                # лимит — переключаем ключ
+                self.rotate_key()
+                print("Меняем ключ. Актуальный:", self.cur_key)
+
+            elif response.status_code == 403:
+                error_code = response.json().get("error", {}).get("code")
+
+                if error_code in ["invalid_api_key", "missing_api_key"]:
+                    # ключ умер — удаляем из пула
+                    self.rotate_key()
+                    print("Меняем ключ. Актуальный:", self.cur_key)
+
+                else:
+                    # другая 403
+                    print(f"Ошибка запроса {from_code} -> {to_code} на {date}: {e}")
             return []
 
     def process_segments(self, segments, from_name, to_name):
@@ -148,9 +176,11 @@ class Parser():
                         continue
 
                     print(f"{from_name} -> {to_name}")
-
                     segments = self.get_routes(from_code, to_code, date)
                     print("Найдено:", len(segments))
+
+                    #   Проверка наличия ключей после додепа:
+                    if not self.has_free_keys(): break
 
                     routes = self.process_segments(segments, from_name, to_name)
                     all_routes[from_name].extend(routes)
@@ -159,6 +189,12 @@ class Parser():
                 #   Записываем с нуля уже спарсенное
                 with open(self.path4flights, "w", encoding="utf-8") as f:
                     json.dump(all_routes, f, ensure_ascii=False, indent=2)
+                #   Проверка наличия ключей после додепа:
+                if not self.has_free_keys(): break
+            #   Проверка наличия ключей после додепа:
+            if not self.has_free_keys(): 
+                print("API ключи закончились!")
+                break
 
         print("Готово. Городов в результате:", len(all_routes))
 
@@ -183,12 +219,17 @@ def get_date_range(datedelta=14, start_date=date.today()):
     return dates
 
 
+API_KEYS = [
+    "1ab02b59-e89c-4584-82a8-d45acae4ba61",
+
+]
+
 parser = Parser(
     DATES=get_date_range(5),
-    API_KEY="1ab02b59-e89c-4584-82a8-d45acae4ba61",
-    path4flights=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights.json",
+    API_KEYS=API_KEYS,
+    path4flights=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\flights1.json",
     path4cities=r"C:\Users\nikit\OneDrive\Документы\УЧЕБА\tbanksm\tbanksm\map\parsing\cities.json"
 )
 
-# parser.update_flights()
-parser.update_transport_type()
+parser.update_flights()
+# parser.update_transport_type()
