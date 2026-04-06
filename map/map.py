@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+import random
+from datetime import datetime, timezone, timedelta
 from collections import deque
 import heapq
 import json
@@ -264,17 +265,11 @@ class Graph:
             flight_lst = ['Нет подходящих рейсов😭']
         return flight_lst
 
-    def get_straight_races(self, cityA: str, cityB: str, departure_time: datetime, transport_list=None):
-        transport_list = self._default_transport_list(transport_list)
-        if cityA not in self.graph:
-            return ['Нет подходящих рейсов😭']
-
-        lst = [
-            flight for flight in self.graph[cityA]
-            if flight.cityB == cityB
-            and flight.check_transport_list(transport_list)
-            and flight.start_time >= departure_time
-        ]
+    def get_straight_races(self, cityA: str, cityB: str, departure_time: datetime, transport_list=[1, 2, 3]):
+        lst = [flight for flight in self.graph[cityA]
+                if flight.cityB == cityB
+                and flight.check_transport_list(transport_list)
+                and ((flight.start_time - timedelta(days=1)).date() <= departure_time.date() <= (flight.start_time + timedelta(days=1)).date())]
         if len(lst) == 0:
             lst = ['Нет подходящих рейсов😭']
         return lst
@@ -287,3 +282,50 @@ class Graph:
         if len(lst) == 0:
             lst = ['Нет подходящих рейсов😭']
         return lst
+
+    def forward_back_routes(self, cityA, cityB, start_time, back_time):
+        lst = []
+        for flight in self.graph[cityA]:
+            if (flight.cityB == cityB and flight.start_time.date() == start_time.date()):
+                for flight2 in self.graph[cityB]:
+                    if flight2.cityB == cityA and flight2.start_time.date() == back_time.date() and flight.arrive_time+self.flight_delay < flight2.start_time:
+                        lst.append((flight, flight2))
+        return lst
+
+
+    def __find_cheapest_way(self,
+                            cityA: str,
+                            city_lst: list[str],
+                            departure_time: datetime,
+                            time_delta: timedelta,
+                            transport_list = [1, 2, 3]):
+        """
+        вспомогательная функция для build_tour
+        """
+
+        pass
+
+
+
+    def build_tour(
+            self,
+            cityA, #город отправления
+            city_list: list[str], #список городов, которые хочется посетить
+            departure_time: datetime, #время вылета/выезда
+            chill_time : timedelta,  #сколько дней клиент хочет оставться в городе
+            transport_list=[1, 2, 3] # разрешённые виды транспорта
+    ):
+        """
+        Эта функция позволяет строить тур
+         по выбранным городам
+          за минимальную цену
+        """
+        t = 1.0
+        n = len(city_list)
+        for i in range(1000):
+            t *= 0.99
+            cur_lst = city_list
+            v = random.randint() % n
+            u = random.randint() % n
+            cur_lst[u], cur_lst[v] = cur_lst[v], cur_lst[u]
+        pass
