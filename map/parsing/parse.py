@@ -45,6 +45,7 @@ class Parser():
         self.cur_key_id += 1
         if (self.cur_key_id < len(API_KEYS)):
             self.cur_key = self.API_KEYS[self.cur_key_id]
+            print(f"Меняем ключ. Актуальный {self.cur_key_id}:", self.cur_key)
 
     
     def has_free_keys(self):
@@ -91,7 +92,6 @@ class Parser():
             if response.status_code == 429:
                 # лимит — переключаем ключ
                 self.rotate_key()
-                print("Меняем ключ. Актуальный:", self.cur_key)
 
             elif response.status_code == 403:
                 error_code = response.json().get("error", {}).get("code")
@@ -99,7 +99,6 @@ class Parser():
                 if error_code in ["invalid_api_key", "missing_api_key"]:
                     # ключ умер — удаляем из пула
                     self.rotate_key()
-                    print("Меняем ключ. Актуальный:", self.cur_key)
 
                 else:
                     # другая 403
@@ -221,7 +220,11 @@ def get_date_range(datedelta=14, start_date=date.today()):
 
 API_KEYS = [
     "1ab02b59-e89c-4584-82a8-d45acae4ba61",
-
+    "020aed89-3a0b-4c4e-8766-ce988f42c520",
+    "d5f6c293-846e-4a7e-9284-b75933178188",
+    "c2a50af4-c0ef-4990-a918-c638dbedf83f",
+    "f929956f-faae-48b9-9bdc-20fdf37bee57",
+    "eb5ca38b-8424-4852-a59b-325602fae6fa"
 ]
 
 parser = Parser(
